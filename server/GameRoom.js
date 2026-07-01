@@ -5,7 +5,7 @@ import {
 } from '../src/game/Ship.js';
 import { StormSystem } from '../src/game/StormSystem.js';
 import {
-  MAX_ENERGY, ENERGY_PER_TURN, COMBO_THRESHOLDS, POWER_UPS, CELL,
+  STARTING_INVENTORY, COMBO_THRESHOLDS, POWER_UPS, CELL,
 } from '../src/game/constants.js';
 import { serializeShotResult } from '../shared/protocol.js';
 import { randomBytes } from 'crypto';
@@ -39,9 +39,8 @@ export class GameRoom {
       orientation: 'h',
       placementDone: false,
       ready: false,
-      energy: MAX_ENERGY,
       combo: 0,
-      inventory: { sonar: 1, chain: 0, airstrike: 0, shield: 0, smoke: 0 },
+      inventory: { ...STARTING_INVENTORY },
       activePowerUp: null,
       shieldMode: false,
       smokeActive: false,
@@ -200,7 +199,6 @@ export class GameRoom {
       players[id] = {
         id,
         name: p.name,
-        energy: p.energy,
         combo: p.combo,
         inventory: { ...p.inventory },
         smokeActive: p.smokeActive,
@@ -253,10 +251,8 @@ export class GameRoom {
     const player = this.players.get(playerId);
     if (!player || this.currentTurn !== playerId) return { ok: false, error: 'Не ваш ход' };
     if (player.inventory.smoke <= 0) return { ok: false, error: 'Нет дымовой завесы' };
-    if (player.energy < POWER_UPS.smoke.cost) return { ok: false, error: 'Недостаточно энергии' };
 
     player.inventory.smoke--;
-    player.energy -= POWER_UPS.smoke.cost;
     player.smokeActive = true;
     this.addLog(`💨 ${player.name} использовал дымовую завесу`);
     return { ok: true };
@@ -294,7 +290,7 @@ export class GameRoom {
     if (opponent.smokeActive) {
       opponent.smokeActive = false;
       this.addLog(`💨 Дымовая завеса ${opponent.name} сбила прицел!`);
-      this.endTurn(player, 1);
+      this.endTurn(player);
       return { ok: true, results: [{ valid: true, smokeBlocked: true }], gameOver: false };
     }
 
@@ -303,7 +299,6 @@ export class GameRoom {
     }
 
     let results = [];
-    let energyCost = 1;
 
     if (player.activePowerUp === 'sonar' && player.inventory.sonar > 0) {
       player.inventory.sonar--;
@@ -325,7 +320,7 @@ export class GameRoom {
           : `📡 ${player.name}: зона 3×3 пустая`
       );
       player.activePowerUp = null;
-      this.endTurn(player, energyCost);
+      this.endTurn(player);
       return {
         ok: true,
         results: results.map(serializeShotResult),
@@ -333,22 +328,9 @@ export class GameRoom {
       };
     }
 
-    if (player.activePowerUp === 'airstrike' && player.inventory.airstrike > 0) {
-      if (player.energy < POWER_UPS.airstrike.cost + 1) {
-        return { ok: false, error: 'Недостаточно энергии' };
-      }
-      player.inventory.airstrike--;
-      energyCost += POWER_UPS.airstrike.cost;
-      results = opponent.board.fireAirstrike(row, col);
-      player.activePowerUp = null;
-      this.addLog(`💣 ${player.name}: авиаудар!`);
-    } else if (player.activePowerUp === 'chain' && player.inventory.chain > 0) {
-      if (player.energy < POWER_UPS.chain.cost + 1) {
-        return { ok: false, error: 'Недостаточно энергии' };
-      }
+    if (player.activePowerUp === 'chain' && player.inventory.chain > 0) {
       player.inventory.chain--;
-      energyCost += POWER_UPS.chain.cost;
-      results = opponent.board.fireChain(row, col);
+      results = opponent.board.fireChainVolley(row, col);
       player.activePowerUp = null;
       this.addLog(`⚡ ${player.name}: цепная молния!`);
     } else {
@@ -370,7 +352,7 @@ export class GameRoom {
       this.phase = 'finished';
       this.addLog(`🏆 ${player.name} победил!`);
     } else {
-      storm = this.endTurn(player, energyCost);
+      storm = this.endTurn(player);
     }
 
     return {
@@ -413,17 +395,9 @@ export class GameRoom {
     }
   }
 
-  endTurn(player, energyCost) {
-    player.energy = Math.max(0, player.energy - energyCost);
+  endTurn(player) {
     this.currentTurn = this.opponentOf(player.id)?.id || null;
     this.turnNumber++;
-
-    for (const p of this.players.values()) {
-      if (p.id === this.currentTurn) {
-        const bonus = p.board.ships.filter(s => !s.sunk && s.type.ability === 'speed').length;
-        p.energy = Math.min(MAX_ENERGY, p.energy + ENERGY_PER_TURN + bonus);
-      }
-    }
 
     const stormEvent = this.storm.tick(this.turnNumber);
     if (stormEvent) {
@@ -452,9 +426,7 @@ export class GameRoom {
         }
       }
     } else if (event.id === 'calm') {
-      for (const p of this.players.values()) {
-        p.energy = Math.min(MAX_ENERGY, p.energy + 2);
-      }
+      // штиль — без бонусов, только ясная погода
     }
     return event;
   }

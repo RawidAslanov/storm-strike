@@ -48,7 +48,6 @@ export function getMultiplayerGameState(mp, battleState) {
     turn: battleState?.currentTurn,
     isYourTurn: battleState?.isYourTurn ?? (battleState?.currentTurn === mp.playerId),
     turnNumber: battleState?.turnNumber || 0,
-    energy: you?.energy ?? 10,
     combo: you?.combo ?? 0,
     inventory: you?.inventory ?? { sonar: 1, chain: 2, shield: 2, smoke: 3 },
     stats: you?.stats ?? { hits: 0, misses: 0, shipsSunk: 0, combos: 0 },

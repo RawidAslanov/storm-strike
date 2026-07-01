@@ -72,6 +72,9 @@ export class App {
         break;
       case 'game_start':
         this.game.phase = data.phase === 'battle' ? PHASE.BATTLE : PHASE.PLACEMENT;
+        if (data.phase === 'battle') {
+          this.mpState = getMultiplayerGameState(this.mp, this.mp.state?.battle);
+        }
         break;
       case 'shot_result':
         for (const res of data.results || []) {
@@ -352,6 +355,7 @@ export class App {
     container.querySelector('#btn-auto').addEventListener('click', () => {
       sounds.click();
       this.mp.autoPlace();
+      localGame.autoPlacePlayerFleet({ skipBattle: true });
     });
   }
 

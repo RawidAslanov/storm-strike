@@ -69,11 +69,12 @@ export class GameEngine {
     this.playerBoard.reset();
   }
 
-  autoPlacePlayerFleet() {
+  autoPlacePlayerFleet(options = {}) {
     const { grid, ships } = generateRandomFleet();
     this.playerBoard.grid = grid;
     this.playerBoard.ships = ships;
-    this.startBattle();
+    this.placementIndex = this.placementShips.length;
+    if (!options.skipBattle) this.startBattle();
   }
 
   getCurrentPlacementShip() {

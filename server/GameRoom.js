@@ -206,6 +206,7 @@ export class GameRoom {
         myShots: opponent ? opponent.board.shots : null,
         enemyShots: p.board.shots,
         myShips: p.board.ships.map(s => ({
+          id: s.id,
           typeId: s.typeId,
           cells: s.cells,
           sunk: s.sunk,
@@ -216,6 +217,7 @@ export class GameRoom {
         myRevealed: [...p.board.revealed],
         enemySunkShips: opponent
           ? opponent.board.ships.filter(s => s.sunk).map(s => ({
+            id: s.id,
             typeId: s.typeId,
             cells: s.cells,
             sunk: true,

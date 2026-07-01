@@ -24,11 +24,61 @@ export function alignLayerToGrid(gridWrap, layer) {
 }
 
 /** Синхронизирует все оверлеи сетки после layout/resize */
+function positionOverlayUnits(grid, layer) {
+  if (!grid || !layer) return;
+  const layerRect = layer.getBoundingClientRect();
+
+  for (const unit of layer.querySelectorAll('.ship-unit:not(.ship-unit--hidden)')) {
+    const r = parseInt(unit.dataset.r, 10);
+    const c = parseInt(unit.dataset.c, 10);
+    const len = parseInt(unit.dataset.len, 10) || 1;
+    const isV = unit.classList.contains('ship-unit--v');
+    const cell0 = grid.querySelector(`[data-r="${r}"][data-c="${c}"]`);
+    if (!cell0) continue;
+
+    const r0 = cell0.getBoundingClientRect();
+    if (!isV) {
+      const cellEnd = grid.querySelector(`[data-r="${r}"][data-c="${c + len - 1}"]`) || cell0;
+      const r1 = cellEnd.getBoundingClientRect();
+      unit.style.marginTop = '0';
+      unit.style.marginLeft = '0';
+      unit.style.left = `${r0.left - layerRect.left}px`;
+      unit.style.top = `${r0.top - layerRect.top - r0.height * 0.22}px`;
+      unit.style.width = `${r1.right - r0.left}px`;
+      unit.style.height = `${r0.height * 1.38}px`;
+    } else {
+      const cellEnd = grid.querySelector(`[data-r="${r + len - 1}"][data-c="${c}"]`) || cell0;
+      const r1 = cellEnd.getBoundingClientRect();
+      unit.style.marginTop = '0';
+      unit.style.marginLeft = '0';
+      unit.style.left = `${r0.left - layerRect.left - r0.width * 0.22}px`;
+      unit.style.top = `${r0.top - layerRect.top}px`;
+      unit.style.width = `${r0.width * 1.38}px`;
+      unit.style.height = `${r1.bottom - r0.top}px`;
+    }
+  }
+
+  for (const fx of layer.querySelectorAll('.cell-effect')) {
+    const r = parseInt(fx.dataset.r, 10);
+    const c = parseInt(fx.dataset.c, 10);
+    const cell = grid.querySelector(`[data-r="${r}"][data-c="${c}"]`);
+    if (!cell) continue;
+    const cr = cell.getBoundingClientRect();
+    fx.style.left = `${cr.left - layerRect.left}px`;
+    fx.style.top = `${cr.top - layerRect.top}px`;
+    fx.style.width = `${cr.width}px`;
+    fx.style.height = `${cr.height}px`;
+  }
+}
+
 export function syncGridOverlays(gridWrap) {
   if (!gridWrap) return;
+  const grid = gridWrap.querySelector('.grid');
   alignLayerToGrid(gridWrap, gridWrap.querySelector('.projectile-layer'));
   alignLayerToGrid(gridWrap, gridWrap._shipLayer);
   alignLayerToGrid(gridWrap, gridWrap._effectLayer);
+  positionOverlayUnits(grid, gridWrap._shipLayer);
+  positionOverlayUnits(grid, gridWrap._effectLayer);
 }
 
 /** Отложенная синхронизация — после того как браузер посчитает layout */

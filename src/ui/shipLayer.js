@@ -55,6 +55,10 @@ function shouldShowEnemyWreck(ship, view) {
   return view === 'enemy' && ship.sunk;
 }
 
+export function shipKey(ship) {
+  return String(ship.id ?? `${ship.typeId}:${ship.cells?.map(([r, c]) => `${r},${c}`).join('|')}`);
+}
+
 function buildShipUnit(ship, board, view) {
   const [r, c] = getShipOrigin(ship);
   const orient = getShipOrientation(ship);
@@ -66,7 +70,10 @@ function buildShipUnit(ship, board, view) {
 
   const unit = document.createElement('div');
   unit.className = `ship-unit ship-unit--${ship.typeId} ship-unit--${orient}`;
-  unit.dataset.shipId = ship.id;
+  unit.dataset.shipId = shipKey(ship);
+  unit.dataset.r = String(r);
+  unit.dataset.c = String(c);
+  unit.dataset.len = String(len);
   unit.style.setProperty('--r', r);
   unit.style.setProperty('--c', c);
   unit.style.setProperty('--len', len);
@@ -158,14 +165,18 @@ export function updateShipLayer(layer, board, view) {
 
   const existing = new Map();
   for (const el of layer.querySelectorAll('.ship-unit')) {
-    existing.set(+el.dataset.shipId, el);
+    existing.set(el.dataset.shipId, el);
   }
 
+  const seen = new Set();
+
   for (const ship of board.ships) {
+    const key = shipKey(ship);
+    seen.add(key);
     const showAlive = shouldShowShip(ship, board, view);
     const showWreck = shouldShowEnemyWreck(ship, view);
     const showSinking = ship.sunk && !ship._sinkDone && view === 'player';
-    let unit = existing.get(ship.id);
+    let unit = existing.get(key);
 
     if (!showAlive && !showSinking && !showWreck) {
       if (unit && !unit.classList.contains('ship-unit--sinking')) unit.remove();
@@ -184,11 +195,12 @@ export function updateShipLayer(layer, board, view) {
       unit?.remove();
       unit = buildShipUnit(ship, board, view);
       layer.appendChild(unit);
+      existing.set(key, unit);
     }
   }
 
-  for (const [id, el] of existing) {
-    if (!layer.querySelector(`[data-ship-id="${id}"]`) && !el.classList.contains('ship-unit--sinking')) {
+  for (const [key, el] of existing) {
+    if (!seen.has(key) && !el.classList.contains('ship-unit--sinking')) {
       el.remove();
     }
   }
@@ -220,6 +232,7 @@ export function preloadShipAssets() {
 }
 
 export function attachShipLayers(gridWrap, board, view) {
+  gridWrap.querySelectorAll('.ship-layer, .effect-layer').forEach((el) => el.remove());
   const { layer, effects } = renderShipLayer(board, view);
   gridWrap.appendChild(layer);
   gridWrap.appendChild(effects);

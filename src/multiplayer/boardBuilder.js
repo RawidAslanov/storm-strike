@@ -2,6 +2,12 @@ import { Board } from '../game/Board.js';
 import { SHIP_TYPES, CELL } from '../game/constants.js';
 import { createEmptyGrid } from '../game/Ship.js';
 
+function stableShipId(ship, index) {
+  if (ship.id != null) return ship.id;
+  const cells = (ship.cells || []).map(([r, c]) => `${r},${c}`).join('|');
+  return `${ship.typeId || 'ship'}:${cells || index}`;
+}
+
 export function buildMyBoard(you) {
   const board = new Board();
   if (!you) return board;
@@ -12,8 +18,9 @@ export function buildMyBoard(you) {
   board.revealed = new Set(you.myRevealed || you.revealed || []);
   board.fogCells = new Set(you.fogCells || []);
 
-  board.ships = (you.myShips || []).map(s => ({
+  board.ships = (you.myShips || []).map((s, i) => ({
     ...s,
+    id: stableShipId(s, i),
     type: SHIP_TYPES[s.typeId],
     typeId: s.typeId,
     revealed: s.typeId !== 'submarine' || s.hits > 0,
@@ -36,8 +43,9 @@ export function buildEnemyBoard(you) {
   board.revealed = new Set(you.enemyRevealed || []);
   board.fogCells = new Set(you.enemyFogCells || []);
   board.sonarMarks = new Map(you.enemySonarMarks || []);
-  board.ships = (you.enemySunkShips || []).map(s => ({
+  board.ships = (you.enemySunkShips || []).map((s, i) => ({
     ...s,
+    id: stableShipId(s, i),
     type: SHIP_TYPES[s.typeId],
     typeId: s.typeId,
     sunk: true,

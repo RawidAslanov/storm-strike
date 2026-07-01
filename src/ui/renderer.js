@@ -1,6 +1,6 @@
 import { GRID_SIZE, CELL, POWER_UPS, SHIP_TYPES, DIFFICULTY, FLEET_COMPOSITION, TOTAL_SHIPS } from '../game/constants.js';
 import { shipIconSvg } from './shipSprites.js';
-import { attachShipLayers, refreshShipLayers, getShipOrigin } from './shipLayer.js';
+import { attachShipLayers, refreshShipLayers, getShipOrigin, shipKey } from './shipLayer.js';
 
 function findShipAt(board, r, c) {
   return board.ships.find(s => s.cells.some(([sr, sc]) => sr === r && sc === c));
@@ -192,8 +192,7 @@ export function updateGrid(grid, board, view, game) {
   if (view === 'player' && wrap?.classList.contains('grid-wrap')) {
     wrap.classList.toggle('grid-wrap--shield-mode', !!game.shieldMode);
     for (const unit of wrap.querySelectorAll('.ship-unit')) {
-      const shipId = +unit.dataset.shipId;
-      const ship = board.ships.find(s => s.id === shipId);
+      const ship = board.ships.find(s => shipKey(s) === unit.dataset.shipId);
       const canPick = shieldClick && ship && !ship.sunk && !board.isShipShielded(ship.id);
       unit.classList.toggle('ship-unit--shield-pick', !!canPick);
       unit.classList.toggle('ship-unit--shielded-ship', !!(ship && board.isShipShielded(ship.id)));

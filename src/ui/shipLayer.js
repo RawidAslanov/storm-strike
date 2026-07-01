@@ -195,11 +195,13 @@ export function updateShipLayer(layer, board, view) {
 
   if (effects) {
     effects.innerHTML = '';
-    for (let r = 0; r < 10; r++) {
-      for (let c = 0; c < 10; c++) {
-        const shot = board.shots[r][c];
-        if (shot === CELL.MISS && !(view === 'player' && isPlayerShipCell(board, r, c))) {
-          effects.appendChild(buildCellEffect(r, c, 'miss'));
+    if (view === 'player') {
+      for (let r = 0; r < 10; r++) {
+        for (let c = 0; c < 10; c++) {
+          const shot = board.shots[r][c];
+          if (shot === CELL.MISS && !isPlayerShipCell(board, r, c)) {
+            effects.appendChild(buildCellEffect(r, c, 'miss'));
+          }
         }
       }
     }

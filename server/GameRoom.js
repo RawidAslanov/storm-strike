@@ -212,6 +212,8 @@ export class GameRoom {
           hits: s.hits,
         })),
         enemySonarMarks: opponent ? [...opponent.board.sonarMarks.entries()] : [],
+        enemyRevealed: opponent ? [...opponent.board.revealed] : [],
+        myRevealed: [...p.board.revealed],
         enemySunkShips: opponent
           ? opponent.board.ships.filter(s => s.sunk).map(s => ({
             typeId: s.typeId,
@@ -222,7 +224,6 @@ export class GameRoom {
           : [],
         enemyFogCells: opponent ? [...opponent.board.fogCells] : [],
         shieldedShips: [...p.board.shieldedShips],
-        revealed: [...p.board.revealed],
         fogCells: [...p.board.fogCells],
       };
     }
@@ -252,6 +253,9 @@ export class GameRoom {
       return;
     }
     if (player.inventory[powerUpId] <= 0) return;
+    if (powerUpId !== 'sonar') {
+      for (const p of this.players.values()) p.board.sonarMarks.clear();
+    }
     player.activePowerUp = player.activePowerUp === powerUpId ? null : powerUpId;
     player.shieldMode = false;
   }
@@ -407,6 +411,12 @@ export class GameRoom {
   endTurn(player) {
     this.currentTurn = this.opponentOf(player.id)?.id || null;
     this.turnNumber++;
+
+    for (const p of this.players.values()) {
+      p.board.sonarMarks.clear();
+      p.activePowerUp = null;
+      p.shieldMode = false;
+    }
 
     const stormEvent = this.storm.tick(this.turnNumber);
     if (stormEvent) {

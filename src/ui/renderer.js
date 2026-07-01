@@ -177,24 +177,33 @@ export function updateGrid(grid, board, view, game) {
 
   for (const cell of grid._cells) {
     if (view === 'enemy') {
-      const canFire = clickable || sonarClick;
+      const chainClick = game.activePowerUp === 'chain' && game.phase === 'battle';
+      const canFire = clickable || sonarClick || chainClick;
       cell.style.pointerEvents = canFire ? '' : 'none';
       cell.style.cursor = canFire ? 'pointer' : 'default';
     } else if (view === 'player') {
       cell.style.pointerEvents = shieldClick ? '' : 'none';
       cell.style.cursor = shieldClick ? 'pointer' : 'default';
-      const r = +cell.dataset.r;
-      const c = +cell.dataset.c;
-      const onShip = shipMap?.has(`${r},${c}`);
-      const ship = shipMap?.get(`${r},${c}`);
-      const canShield = shieldClick && onShip && ship && !board.isShipShielded(ship.id);
-      cell.classList.toggle('cell--shield-target', canShield);
+      cell.classList.remove('cell--shield-target');
     }
   }
 
   const wrap = grid.parentElement;
+  if (view === 'player' && wrap?.classList.contains('grid-wrap')) {
+    wrap.classList.toggle('grid-wrap--shield-mode', !!game.shieldMode);
+    for (const unit of wrap.querySelectorAll('.ship-unit')) {
+      const shipId = +unit.dataset.shipId;
+      const ship = board.ships.find(s => s.id === shipId);
+      const canPick = shieldClick && ship && !ship.sunk && !board.isShipShielded(ship.id);
+      unit.classList.toggle('ship-unit--shield-pick', !!canPick);
+      unit.classList.toggle('ship-unit--shielded-ship', !!(ship && board.isShipShielded(ship.id)));
+    }
+  }
+
   if (wrap?.classList.contains('grid-wrap')) {
-    wrap.classList.toggle('grid-wrap--shield-mode', view === 'player' && game.shieldMode);
+    if (view !== 'player') {
+      wrap.classList.toggle('grid-wrap--shield-mode', false);
+    }
     refreshShipLayers(wrap, board, view);
   }
 }

@@ -9,8 +9,8 @@ export function buildMyBoard(you) {
   board.grid = createEmptyGrid();
   board.shots = you.enemyShots || createEmptyGrid();
   board.shieldedShips = new Set(you.shieldedShips || you.shields || []);
-  board.revealed = new Set(you.revealed || []);
-  board.fogCells = new Set();
+  board.revealed = new Set(you.myRevealed || you.revealed || []);
+  board.fogCells = new Set(you.fogCells || []);
 
   board.ships = (you.myShips || []).map(s => ({
     ...s,
@@ -33,7 +33,7 @@ export function buildEnemyBoard(you) {
   if (!you) return board;
 
   board.shots = you.myShots || createEmptyGrid();
-  board.revealed = new Set(you.revealed || []);
+  board.revealed = new Set(you.enemyRevealed || []);
   board.fogCells = new Set(you.enemyFogCells || []);
   board.sonarMarks = new Map(you.enemySonarMarks || []);
   board.ships = (you.enemySunkShips || []).map(s => ({

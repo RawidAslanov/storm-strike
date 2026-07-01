@@ -988,12 +988,36 @@ html, body {
 }
 
 .grid-wrap--shield-mode .cell--under-ship {
-  box-shadow: inset 0 0 0 2px rgba(68, 255, 136, 0.55);
-  cursor: crosshair !important;
+  box-shadow: none;
+  cursor: inherit !important;
+}
+
+.grid-wrap--shield-mode .ship-unit:not(.ship-unit--hidden):not(.ship-unit--sinking) {
+  outline: 3px solid rgba(92, 184, 92, 0.9);
+  outline-offset: 3px;
+  border-radius: 6px;
+  filter: drop-shadow(0 0 10px rgba(92, 184, 92, 0.45));
+  cursor: crosshair;
+}
+
+.grid-wrap--shield-mode .ship-unit--shield-pick {
+  outline-color: rgba(120, 255, 160, 1);
+  animation: shield-pick 1.2s ease-in-out infinite;
+}
+
+@keyframes shield-pick {
+  0%, 100% { filter: drop-shadow(0 0 8px rgba(92, 184, 92, 0.4)); }
+  50% { filter: drop-shadow(0 0 14px rgba(120, 255, 160, 0.7)); }
+}
+
+.grid-wrap--shield-mode .ship-unit--shielded-ship {
+  outline-color: rgba(92, 184, 92, 0.5);
+  opacity: 0.65;
+  pointer-events: none;
 }
 
 .cell--shield-target {
-  box-shadow: inset 0 0 0 3px rgba(68, 255, 136, 0.85), 0 0 10px rgba(68, 255, 136, 0.35) !important;
+  /* legacy — щит подсвечивает весь корабль через .ship-unit */
 }
 
 .cell--ship-hit {

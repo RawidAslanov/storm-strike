@@ -225,6 +225,10 @@ export class App {
           this.mpState.isYourTurn = data.currentTurn === this.mp.playerId;
           if (data.turnNumber != null) this.mpState.turnNumber = data.turnNumber;
         }
+        if (data.currentTurn !== this.mp.playerId) {
+          this.activePowerUp = null;
+          this.shieldMode = false;
+        }
         if (this.currentPhase === PHASE.BATTLE && this.battleRefs) {
           this.updateBattleUI(this.getBattleState());
           return;
@@ -238,6 +242,15 @@ export class App {
         return;
     }
     this.render();
+  }
+
+  getBattleHint(state) {
+    const { isPlayerTurn, game } = state;
+    if (!isPlayerTurn) return '⏳ Ход соперника...';
+    if (game.shieldMode) return '🛡 Нажмите на корабль — щит защитит его от 1 удара';
+    if (game.activePowerUp === 'sonar') return '📡 Локатор: выберите центр области 3×3 на поле врага';
+    if (game.activePowerUp === 'chain') return '⚡ Молния: нажмите на клетку — весь корабль там уничтожится';
+    return '🎯 Ваш ход — нажмите на клетку поля противника';
   }
 
   getBattleState() {
@@ -617,7 +630,7 @@ export class App {
       <div class="screen screen--battle">
         <header class="hud hud--glass">
           <div class="hud__turn ${isPlayerTurn ? 'hud__turn--player' : 'hud__turn--enemy'}">
-            ${isPlayerTurn ? '🎯 Ваш ход — стреляйте!' : '⏳ Ход соперника...'}
+            ${this.getBattleHint(state)}
           </div>
           <div class="hud__row">
             <div class="hud__turn-num">Ход ${turnNumber}${isMp ? ' · PvP' : ''}</div>
@@ -687,9 +700,7 @@ export class App {
 
     const turnEl = refs.container.querySelector('.hud__turn');
     turnEl.className = `hud__turn ${isPlayerTurn ? 'hud__turn--player' : 'hud__turn--enemy'}`;
-    turnEl.textContent = isPlayerTurn
-      ? (game.shieldMode ? '🛡 Нажмите на корабль — щит на весь корабль' : game.activePowerUp === 'sonar' ? '📡 Локатор: выберите центр области 3×3' : '🎯 Ваш ход — стреляйте!')
-      : '⏳ Ход соперника...';
+    turnEl.textContent = this.getBattleHint(state);
 
     refs.container.querySelector('.hud__turn-num').textContent = `Ход ${turnNumber}${state.isMp ? ' · PvP' : ''}`;
     refs.container.querySelector('.hud__enemy-info strong').textContent = enemyRemaining;

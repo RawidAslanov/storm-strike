@@ -2,17 +2,27 @@ import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 import { RoomManager } from './RoomManager.js';
 
-const PORT = process.env.PORT || 3001;
-const HOST = process.env.HOST || '0.0.0.0';
+const PORT = Number(process.env.PORT) || 3001;
+// Render: всегда 0.0.0.0 — process.env.HOST ломает port scan
+const BIND_HOST = '0.0.0.0';
 
 const httpServer = createServer((req, res) => {
-  if (req.url === '/' || req.url === '/health') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, service: 'storm-strike-ws' }));
+  const path = (req.url || '/').split('?')[0];
+  if (path === '/' || path === '/health') {
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
+    });
+    res.end(JSON.stringify({ ok: true, service: 'storm-strike-ws', port: PORT }));
     return;
   }
   res.writeHead(404);
   res.end();
+});
+
+httpServer.on('error', (err) => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
 });
 
 const wss = new WebSocketServer({ server: httpServer });
@@ -208,6 +218,6 @@ wss.on('connection', (ws) => {
   }
 });
 
-httpServer.listen(PORT, HOST, () => {
-  console.log(`🚢 Storm Strike multiplayer server on ${HOST}:${PORT}`);
+httpServer.listen(PORT, BIND_HOST, () => {
+  console.log(`🚢 Storm Strike multiplayer server listening on ${BIND_HOST}:${PORT}`);
 });

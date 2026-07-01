@@ -58,7 +58,7 @@
   --shadow-deep: 0 14px 48px rgba(0, 0, 0, 0.6);
   --shadow-gold: 0 4px 28px rgba(212, 160, 84, 0.22);
 
-  --cell-size: clamp(28px, 7.5vw, 38px);
+  --cell-size: clamp(32px, calc((100vw - 48px) / 10), 42px);
   --radius: 8px;
   --radius-lg: 14px;
   --radius-pill: 999px;
@@ -473,6 +473,8 @@ html, body {
 .cell {
   width: var(--cell-size);
   height: var(--cell-size);
+  min-width: 32px;
+  min-height: 32px;
   border: none;
   font-size: 0;
   cursor: pointer;
@@ -483,6 +485,8 @@ html, body {
   position: relative;
   overflow: hidden;
   padding: 0;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .cell::after {
@@ -493,7 +497,7 @@ html, body {
   pointer-events: none;
 }
 
-.cell:active:not(:disabled) { transform: scale(0.95); }
+.cell:active:not(:disabled) { transform: scale(0.94); opacity: 0.92; }
 
 .cell--water {
   background:
@@ -1957,6 +1961,70 @@ html, body {
   max-width: 140px;
 }
 
+@media (max-width: 520px) {
+  :root {
+    --cell-size: clamp(34px, calc((100vw - 40px) / 10), 44px);
+  }
+
+  .grid-wrap {
+    padding: 8px;
+    max-width: calc(100vw - 16px);
+  }
+
+  .screen--battle {
+    padding-bottom: 12px;
+  }
+
+  .boards {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .board-panel {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .music-bar {
+    top: max(8px, env(safe-area-inset-top));
+    bottom: auto;
+    right: max(8px, env(safe-area-inset-right));
+    left: auto;
+    padding: 4px 6px;
+    gap: 4px;
+    border-radius: 999px;
+    max-width: none;
+    z-index: 150;
+  }
+
+  .music-bar__slider,
+  .music-bar__title {
+    display: none;
+  }
+
+  .music-bar__mute {
+    width: 38px;
+    height: 38px;
+    font-size: 16px;
+  }
+
+  .music-bar__skip {
+    width: 32px;
+    height: 32px;
+    font-size: 12px;
+  }
+
+  .screen--placement .placement-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 4;
+    background: linear-gradient(0deg, rgba(10, 20, 32, 0.95) 70%, transparent);
+    padding: 10px 0 6px;
+    width: 100%;
+    justify-content: center;
+  }
+}
+
 @media (min-width: 600px) {
   .boards {
     flex-direction: row;
@@ -1964,11 +2032,5 @@ html, body {
     justify-content: center;
   }
   .board-panel { flex: 1; }
-  :root { --cell-size: 34px; }
-}
-
-@media (max-height: 700px) {
-  :root { --cell-size: clamp(24px, 6.5vw, 30px); }
-  .screen { padding: 8px; }
-  .logo__icon { font-size: 48px; }
+  :root { --cell-size: 36px; }
 }

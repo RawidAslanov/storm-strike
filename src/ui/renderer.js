@@ -83,6 +83,22 @@ export function createCellState(board, r, c, view = 'enemy', shipMap) {
   return { cls, content, r, c, shot, shipType, segment, fogged: false };
 }
 
+function bindCellTap(cell, handler) {
+  let lastFire = 0;
+  const run = (e) => {
+    if (e?.pointerType === 'mouse' && e.button !== 0) return;
+    const now = Date.now();
+    if (now - lastFire < 280) return;
+    lastFire = now;
+    handler();
+  };
+  cell.addEventListener('pointerup', run);
+  cell.addEventListener('click', (e) => {
+    if (e.pointerType === 'touch' || e.pointerType === 'pen') return;
+    run(e);
+  });
+}
+
 function applyCellState(cell, state) {
   cell.className = state.cls;
   cell.innerHTML = state.content;
@@ -110,12 +126,10 @@ export function renderGrid(board, view, game, onCellClick) {
       cells.push(cell);
 
       if (view === 'enemy' && game.phase === 'battle') {
-        cell.addEventListener('click', () => {
-          if (game.turn === 'player') onCellClick(r, c);
-        });
+        bindCellTap(cell, () => onCellClick(r, c));
       }
       if (view === 'player' && game.phase === 'battle') {
-        cell.addEventListener('click', () => onCellClick(r, c));
+        bindCellTap(cell, () => onCellClick(r, c));
       }
 
       grid.appendChild(cell);
@@ -139,7 +153,8 @@ export function updateGrid(grid, board, view, game) {
   if (!grid?._cells) return renderGrid(board, view, game, () => {});
 
   const clickable = view === 'enemy' && game.turn === 'player' && game.phase === 'battle';
-
+  const sonarClick = view === 'enemy' && game.activePowerUp === 'sonar' && game.phase === 'battle';
+  const shieldClick = view === 'player' && game.shieldMode && game.phase === 'battle';
   const shipMap = view === 'player' ? buildShipMap(board) : grid._shipMap;
   grid._shipMap = shipMap;
 
@@ -152,8 +167,6 @@ export function updateGrid(grid, board, view, game) {
     }
   }
 
-  const shieldClick = view === 'player' && game.shieldMode && game.phase === 'battle';
-  const sonarClick = view === 'enemy' && game.activePowerUp === 'sonar' && game.phase === 'battle';
   for (const cell of grid._cells) {
     if (view === 'enemy') {
       const canFire = clickable || sonarClick;
@@ -196,7 +209,7 @@ export function renderPlacementGrid(game, onCellClick) {
       cell.type = 'button';
       if (state.content) cell.innerHTML = state.content;
       cellEls[r * GRID_SIZE + c] = cell;
-      cell.addEventListener('click', () => onCellClick(r, c));
+      bindCellTap(cell, () => onCellClick(r, c));
       grid.appendChild(cell);
     }
   }
@@ -206,28 +219,33 @@ export function renderPlacementGrid(game, onCellClick) {
     previewEls = [];
   };
 
-  grid.addEventListener('mouseleave', clearPreview);
+  const showPreview = (cell) => {
+    const ship = game.getCurrentPlacementShip();
+    if (!ship) return;
+    clearPreview();
+    const r = +cell.dataset.r;
+    const c = +cell.dataset.c;
+    const cells = game.getPlacementPreview(r, c);
+    if (!cells.length) return;
+    const canPlace = cells.every(([pr, pc]) => {
+      const el = cellEls[pr * GRID_SIZE + pc];
+      return el && !el.classList.contains('cell--under-ship');
+    });
+    for (const [pr, pc] of cells) {
+      const el = cellEls[pr * GRID_SIZE + pc];
+      if (el) {
+        el.classList.add(canPlace ? 'cell--preview' : 'cell--invalid');
+        previewEls.push(el);
+      }
+    }
+  };
+
+  grid.addEventListener('pointerleave', clearPreview);
 
   for (const cell of cellEls) {
-    cell.addEventListener('mouseenter', () => {
-      const ship = game.getCurrentPlacementShip();
-      if (!ship) return;
-      clearPreview();
-      const r = +cell.dataset.r;
-      const c = +cell.dataset.c;
-      const cells = game.getPlacementPreview(r, c);
-      if (!cells.length) return;
-      const canPlace = cells.every(([pr, pc]) => {
-        const el = cellEls[pr * GRID_SIZE + pc];
-        return el && !el.classList.contains('cell--under-ship');
-      });
-      for (const [pr, pc] of cells) {
-        const el = cellEls[pr * GRID_SIZE + pc];
-        if (el) {
-          el.classList.add(canPlace ? 'cell--preview' : 'cell--invalid');
-          previewEls.push(el);
-        }
-      }
+    cell.addEventListener('pointerenter', () => showPreview(cell));
+    cell.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'touch' || e.pointerType === 'pen') showPreview(cell);
     });
   }
 

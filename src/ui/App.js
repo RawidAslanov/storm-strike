@@ -25,6 +25,7 @@ export class App {
     this.shieldMode = false;
     this.activePowerUp = null;
     this.mpLocalGame = null;
+    this.mpBattleGame = null;
     this.currentPhase = null;
     this.battleRefs = null;
     this.placementGrid = null;
@@ -181,7 +182,10 @@ export class App {
         this.game.phase = data.phase === 'battle' ? PHASE.BATTLE : PHASE.PLACEMENT;
         this.currentPhase = null;
         if (data.phase === 'battle') {
-          this.mpState = getMultiplayerGameState(this.mp, this.mp.state?.battle);
+          this.mpBattleGame = null;
+          this.mpState = getMultiplayerGameState(this.mp, this.mp.state?.battle || data);
+        } else {
+          this.mpLocalGame = null;
         }
         break;
       case 'shot_result':
@@ -215,7 +219,12 @@ export class App {
         this.mpState = getMultiplayerGameState(this.mp, data);
         break;
       case 'turn':
-        if (this.mpState) this.mpState.isYourTurn = data.currentTurn === this.mp.playerId;
+        if (!this.mpState) {
+          this.mpState = getMultiplayerGameState(this.mp, data);
+        } else {
+          this.mpState.isYourTurn = data.currentTurn === this.mp.playerId;
+          if (data.turnNumber != null) this.mpState.turnNumber = data.turnNumber;
+        }
         if (this.currentPhase === PHASE.BATTLE && this.battleRefs) {
           this.updateBattleUI(this.getBattleState());
           return;
@@ -234,9 +243,20 @@ export class App {
   getBattleState() {
     if (this.mp) {
       const s = this.mpState || getMultiplayerGameState(this.mp, {});
+      if (!this.mpBattleGame) {
+        this.mpBattleGame = {
+          turn: 'ai', phase: 'battle', shieldMode: false, activePowerUp: null, inventory: {},
+        };
+      }
+      const g = this.mpBattleGame;
+      g.turn = s.isYourTurn ? 'player' : 'ai';
+      g.phase = (s.phase === 'finished' || this.game.phase === PHASE.GAME_OVER) ? 'gameover' : 'battle';
+      g.shieldMode = this.shieldMode;
+      g.activePowerUp = this.activePowerUp;
+      g.inventory = s.inventory || g.inventory;
+
       return {
         isPlayerTurn: s.isYourTurn,
-        energy: 0,
         turnNumber: s.turnNumber,
         stats: s.stats,
         combo: s.combo,
@@ -245,13 +265,7 @@ export class App {
         inventory: s.inventory,
         log: s.log,
         isMp: true,
-        game: {
-          turn: s.isYourTurn ? 'player' : 'ai',
-          phase: 'battle',
-          shieldMode: this.shieldMode,
-          activePowerUp: this.activePowerUp,
-          inventory: s.inventory,
-        },
+        game: g,
       };
     }
     const g = this.game;
@@ -747,10 +761,10 @@ export class App {
   }
 
   renderMpBattle(container) {
-    const state = this.getBattleState();
-    this.buildBattleScreen(container, state, {
+    this.buildBattleScreen(container, this.getBattleState(), {
       onEnemy: (r, c) => {
-        if (!state.isPlayerTurn || this.shieldMode) return;
+        const live = this.getBattleState();
+        if (!live.isPlayerTurn || this.shieldMode) return;
         resumeAudio();
         this.startMusicOnce();
         this.mp.fire(r, c);
@@ -763,9 +777,19 @@ export class App {
       },
       onPowerUp: (id) => {
         resumeAudio(); sounds.powerup();
-        if (id === 'smoke') this.mp.useSmoke();
-        else if (id === 'shield') this.shieldMode = !this.shieldMode;
-        else this.mp.selectPowerUp(id);
+        if (id === 'smoke') {
+          this.mp.useSmoke();
+        } else if (id === 'shield') {
+          this.shieldMode = !this.shieldMode;
+          this.activePowerUp = this.shieldMode ? 'shield' : null;
+          this.mp.selectPowerUp('shield');
+          this.updateBattleUI(this.getBattleState());
+        } else {
+          this.mp.selectPowerUp(id);
+          this.activePowerUp = this.activePowerUp === id ? null : id;
+          this.shieldMode = false;
+          this.updateBattleUI(this.getBattleState());
+        }
       },
     });
   }

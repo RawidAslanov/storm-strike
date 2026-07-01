@@ -10,6 +10,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "start": "node server/index.js",
+    "test": "vitest run",
     "cap:sync": "npm run build && npx cap sync",
     "cap:open:android": "npx cap open android"
   },
@@ -21,6 +22,7 @@
     "@capacitor/cli": "^7.0.0",
     "sharp": "^0.35.3",
     "vite": "^6.0.0",
-    "vite-plugin-pwa": "^0.21.0"
+    "vite-plugin-pwa": "^0.21.0",
+    "vitest": "^3.2.4"
   }
 }

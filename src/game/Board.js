@@ -1,5 +1,5 @@
 import { GRID_SIZE, CELL } from './constants.js';
-import { createEmptyGrid, findShipAt, markSunkArea } from './Ship.js';
+import { createEmptyGrid, findShipAt, markSunkArea, getCrossCells } from './Ship.js';
 
 export class Board {
   constructor() {
@@ -25,6 +25,18 @@ export class Board {
   key(r, c) { return `${r},${c}`; }
 
   getShipAt(r, c) { return findShipAt(this.ships, r, c); }
+
+  /** Скрытые нырялки не видны локатору и на поле врага */
+  findDetectableShipAt(r, c) {
+    const ship = this.getShipAt(r, c);
+    if (!ship) return null;
+    if (ship.typeId === 'submarine' && !ship.revealed && !ship.sunk) return null;
+    return ship;
+  }
+
+  hasLivingShipType(typeId) {
+    return this.ships.some(s => s.typeId === typeId && !s.sunk);
+  }
 
   isShipShielded(shipId) { return this.shieldedShips.has(shipId); }
 
@@ -124,6 +136,19 @@ export class Board {
         result.sunk = true;
         markSunkArea(this.shots, ship);
         for (const [sr, sc] of ship.cells) this.revealCell(sr, sc);
+      } else if (
+        ship.type.ability === 'broadside'
+        && !ship.broadsideUsed
+        && !options.ignoreBroadside
+      ) {
+        ship.broadsideUsed = true;
+        result.broadside = true;
+        for (const [cr, cc] of getCrossCells(r, c)) {
+          if (cr === r && cc === c) continue;
+          if (this.shots[cr][cc] !== CELL.EMPTY) continue;
+          const extra = this.fire(cr, cc, { ...options, ignoreBroadside: true, ignoreArmor: true });
+          if (extra.valid) result.extraShots = [...(result.extraShots || []), extra];
+        }
       }
     } else {
       this.shots[r][c] = CELL.MISS;
@@ -159,7 +184,7 @@ export class Board {
     return results;
   }
 
-  sonarScanZone(r, c) {
+  sonarScanZone(r, c, radius = 1) {
     if (this.shots[r][c] !== CELL.EMPTY) {
       return { found: false, r, c, invalid: true, cells: [] };
     }
@@ -167,13 +192,13 @@ export class Board {
     const cells = [];
     let found = false;
 
-    for (let dr = -1; dr <= 1; dr++) {
-      for (let dc = -1; dc <= 1; dc++) {
+    for (let dr = -radius; dr <= radius; dr++) {
+      for (let dc = -radius; dc <= radius; dc++) {
         const nr = r + dr;
         const nc = c + dc;
         if (nr < 0 || nr >= GRID_SIZE || nc < 0 || nc >= GRID_SIZE) continue;
         cells.push([nr, nc]);
-        if (findShipAt(this.ships, nr, nc)) found = true;
+        if (this.findDetectableShipAt(nr, nc)) found = true;
       }
     }
 
@@ -190,11 +215,27 @@ export class Board {
     return this.sonarScanZone(r, c);
   }
 
-  sonarScan(r, c) {
-    const result = this.sonarScanZone(r, c);
+  sonarScan(r, c, radius = 1) {
+    const result = this.sonarScanZone(r, c, radius);
     if (result.invalid) return [];
     if (!result.found) return [];
-    return result.cells.filter(([nr, nc]) => findShipAt(this.ships, nr, nc));
+    return result.cells.filter(([nr, nc]) => this.findDetectableShipAt(nr, nc));
+  }
+
+  /** Флагман: открывает случайную непроверенную клетку на поле врага */
+  carrierRevealRandom() {
+    const empties = [];
+    for (let r = 0; r < GRID_SIZE; r++) {
+      for (let c = 0; c < GRID_SIZE; c++) {
+        if (this.shots[r][c] === CELL.EMPTY && !this.isRevealed(r, c)) {
+          empties.push([r, c]);
+        }
+      }
+    }
+    if (!empties.length) return null;
+    const [r, c] = empties[Math.floor(Math.random() * empties.length)];
+    this.revealCell(r, c);
+    return { r, c };
   }
 
   getRemainingShips() {

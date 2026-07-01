@@ -1,6 +1,6 @@
 import { Board } from '../game/Board.js';
 import { SHIP_TYPES, CELL } from '../game/constants.js';
-import { createEmptyGrid } from '../game/Ship.js';
+import { createEmptyGrid, createShip, placeShipOnGrid } from '../game/Ship.js';
 
 function stableShipId(ship, index) {
   if (ship.id != null) return ship.id;
@@ -55,6 +55,21 @@ export function buildEnemyBoard(you) {
   return board;
 }
 
+export function syncPlacementGame(game, you) {
+  if (!game || !you) return;
+
+  game.placementIndex = you.placementIndex ?? game.placementIndex;
+  game.placementOrientation = you.orientation || 'h';
+  game.playerBoard.reset();
+
+  for (const s of you.myShips || []) {
+    const ship = createShip(s.typeId, s.cells);
+    ship.id = s.id ?? ship.id;
+    placeShipOnGrid(game.playerBoard.grid, ship);
+    game.playerBoard.ships.push(ship);
+  }
+}
+
 export function getMultiplayerGameState(mp, battleState) {
   const you = battleState?.you || battleState?.players?.[mp.playerId];
   return {
@@ -63,7 +78,7 @@ export function getMultiplayerGameState(mp, battleState) {
     isYourTurn: battleState?.isYourTurn ?? (battleState?.currentTurn === mp.playerId),
     turnNumber: battleState?.turnNumber || 0,
     combo: you?.combo ?? 0,
-    inventory: you?.inventory ?? { sonar: 1, chain: 2, shield: 2, smoke: 3 },
+    inventory: you?.inventory ?? { sonar: 1, chain: 2, shield: 2, smoke: 2 },
     stats: you?.stats ?? { hits: 0, misses: 0, shipsSunk: 0, combos: 0 },
     log: battleState?.log ?? [],
     playerBoard: buildMyBoard(you),

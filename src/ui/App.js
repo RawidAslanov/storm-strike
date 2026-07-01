@@ -158,6 +158,11 @@ export class App {
         this.currentPhase = null;
         break;
       case 'player_joined':
+        if (this.game.phase === PHASE.LOBBY && this.container.querySelector('.screen--lobby')) {
+          this.updateLobbyUI();
+          return;
+        }
+        break;
       case 'placement_update':
         if (data.you) {
           if (!this.mpLocalGame) {
@@ -166,6 +171,10 @@ export class App {
           }
           this.mpLocalGame.placementIndex = data.you.placementIndex;
           this.mpLocalGame.placementOrientation = data.you.orientation || 'h';
+        }
+        if (this.game.phase === PHASE.PLACEMENT && this.placementGrid) {
+          this.updateMpPlacementUI(data);
+          return;
         }
         break;
       case 'game_start':
@@ -276,6 +285,72 @@ export class App {
     setTimeout(() => el.remove(), 3000);
   }
 
+  getOpponentPlacement(data) {
+    const players = data?.players || {};
+    for (const [id, info] of Object.entries(players)) {
+      if (id !== this.mp?.playerId) return info;
+    }
+    return null;
+  }
+
+  updateLobbyUI() {
+    const lobby = this.mp?.state?.lobby;
+    const players = lobby?.players || [];
+    const isHost = players.length === 1 && players[0]?.id === this.mp?.playerId;
+
+    const listEl = this.container.querySelector('#lobby-players');
+    if (listEl) {
+      listEl.innerHTML = `
+        ${players.map(p => `<div class="lobby__player">${p.name} ${p.id === this.mp?.playerId ? '(вы)' : ''}</div>`).join('')}
+        ${players.length < 2 ? '<div class="lobby__player lobby__player--waiting">Ожидание соперника...</div>' : ''}
+      `;
+    }
+
+    const hintEl = this.container.querySelector('.lobby__hint');
+    if (hintEl) {
+      hintEl.textContent = isHost ? 'Отправьте код другу' : 'Ожидание начала...';
+    }
+
+    const codeEl = this.container.querySelector('.lobby__code');
+    if (codeEl && this.mp?.roomCode) codeEl.textContent = this.mp.roomCode;
+  }
+
+  updateMpPlacementUI(data) {
+    const localGame = this.mpLocalGame;
+    if (!localGame || !this.placementGrid) return;
+
+    this.placementGrid._refresh();
+    this.placementGrid._attachLayers?.();
+
+    const list = this.container.querySelector('#ship-list');
+    if (list) {
+      const newList = renderShipList(localGame);
+      newList.id = 'ship-list';
+      list.replaceWith(newList);
+    }
+
+    const ship = localGame.getCurrentPlacementShip();
+    const sub = this.container.querySelector('.header__sub');
+    const opp = this.getOpponentPlacement(data);
+
+    if (sub) {
+      if (ship) {
+        sub.textContent = `Разместите: ${ship.type.name} (${ship.type.size} кл.)`;
+      } else if (opp?.placementDone) {
+        sub.textContent = 'Соперник готов — ожидание старта...';
+      } else {
+        sub.textContent = 'Вы готовы — соперник расставляет флот...';
+      }
+    }
+
+    const oppEl = this.container.querySelector('#mp-opp-status');
+    if (oppEl && opp) {
+      oppEl.textContent = opp.placementDone
+        ? `✓ ${opp.name} готов`
+        : `${opp.name} расставляет корабли (${opp.placementIndex}/${opp.totalShips})`;
+    }
+  }
+
   render() {
     const phase = this.mp ? this.game.phase : this.game.phase;
 
@@ -287,6 +362,9 @@ export class App {
     this.currentPhase = phase;
     this.battleRefs = null;
     this.placementGrid = null;
+    const scrollTop = (phase === PHASE.LOBBY || phase === PHASE.MENU)
+      ? 0
+      : this.container.scrollTop;
     this.container.innerHTML = '';
 
     switch (phase) {
@@ -300,6 +378,9 @@ export class App {
         break;
       case PHASE.GAME_OVER: this.renderGameOver(this.container); break;
     }
+
+    this.container.querySelector('.screen')?.classList.add('screen--enter');
+    this.container.scrollTop = scrollTop;
   }
 
   renderMenu(container) {
@@ -402,16 +483,25 @@ export class App {
 
     container.innerHTML = `
       <div class="screen screen--lobby">
-        <h2 class="lobby__title">Комната</h2>
-        <div class="lobby__code">${this.mp?.roomCode || '----'}</div>
-        <p class="lobby__hint">${isHost ? 'Отправьте код другу' : 'Ожидание начала...'}</p>
-        <div class="lobby__players">
+        <div class="lobby__code-wrap">
+          <h2 class="lobby__title">Комната</h2>
+          <div class="lobby__code" id="lobby-code">${this.mp?.roomCode || '----'}</div>
+          <p class="lobby__hint">${isHost ? 'Отправьте код другу' : 'Ожидание начала...'}</p>
+        </div>
+        <div class="lobby__players" id="lobby-players">
           ${players.map(p => `<div class="lobby__player">${p.name} ${p.id === this.mp?.playerId ? '(вы)' : ''}</div>`).join('')}
           ${players.length < 2 ? '<div class="lobby__player lobby__player--waiting">Ожидание соперника...</div>' : ''}
         </div>
         <button class="btn btn--secondary" id="btn-leave">← Назад</button>
       </div>
     `;
+
+    const codeEl = container.querySelector('#lobby-code');
+    codeEl?.addEventListener('click', () => {
+      const code = this.mp?.roomCode;
+      if (!code) return;
+      navigator.clipboard?.writeText(code).then(() => this.showToast('Код скопирован!'));
+    });
 
     container.querySelector('#btn-leave').addEventListener('click', () => {
       this.mp?.disconnect();
@@ -469,6 +559,7 @@ export class App {
         <header class="header header--glass">
           <h2>⚓ Расстановка флота</h2>
           <p class="header__sub">${ship ? `Разместите: ${ship.type.name} (${ship.type.size} кл.)` : 'Ожидание соперника...'}</p>
+          <p class="mp-opp-status" id="mp-opp-status"></p>
         </header>
         <div id="placement-grid" class="grid-wrap"></div>
         <div id="ship-list"></div>
@@ -500,6 +591,8 @@ export class App {
       this.mp.autoPlace();
       localGame.autoPlacePlayerFleet({ skipBattle: true });
     });
+
+    this.updateMpPlacementUI({ players: {} });
   }
 
   buildBattleScreen(container, state, handlers) {

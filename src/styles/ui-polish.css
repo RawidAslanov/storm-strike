@@ -460,16 +460,41 @@
 }
 
 /* ── Lobby ── */
-.lobby__code {
+.lobby__code-wrap .lobby__code {
   font-family: var(--font-display);
-  font-size: 36px;
-  letter-spacing: 8px;
+  font-size: clamp(28px, 9vw, 36px);
+  letter-spacing: clamp(4px, 2vw, 8px);
   color: var(--gold);
   text-shadow: 0 0 24px var(--gold-glow);
-  padding: 12px 24px;
+  padding: 12px 20px;
   background: var(--glass-bg);
   border: 2px solid var(--glass-border);
   border-radius: var(--radius-lg);
+  display: inline-block;
+  max-width: 100%;
+}
+
+.mp-opp-status {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 6px;
+  min-height: 1.2em;
+}
+
+.screen--placement {
+  justify-content: flex-start;
+  padding-top: 8px;
+  gap: 10px;
+}
+
+.screen--placement .header {
+  width: 100%;
+  max-width: 420px;
+  flex-shrink: 0;
+}
+
+.screen--placement .grid-wrap {
+  flex-shrink: 0;
 }
 
 .lobby__players {

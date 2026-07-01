@@ -69,7 +69,7 @@ function buildShipUnit(ship, board, view) {
   const showSinking = ship.sunk && !ship._sinkDone && view === 'player';
 
   const unit = document.createElement('div');
-  unit.className = `ship-unit ship-unit--${ship.typeId} ship-unit--${orient}`;
+  unit.className = `ship-unit ship-unit--pending ship-unit--${ship.typeId} ship-unit--${orient}`;
   unit.dataset.shipId = shipKey(ship);
   unit.dataset.r = String(r);
   unit.dataset.c = String(c);
@@ -185,11 +185,18 @@ export function updateShipLayer(layer, board, view) {
 
     if (unit?.classList.contains('ship-unit--sinking')) continue;
 
+    const [r, c] = getShipOrigin(ship);
+    const orient = getShipOrientation(ship);
+    const len = ship.cells.length;
     const hits = getHitSegments(ship, board);
     const needsRebuild = !unit
       || (showWreck && !unit.classList.contains('ship-unit--wreck'))
       || (ship.sunk && view === 'player' && !unit.classList.contains('ship-unit--sinking'))
-      || unit.dataset.hitKey !== hits.join(',');
+      || unit.dataset.hitKey !== hits.join(',')
+      || unit.dataset.r !== String(r)
+      || unit.dataset.c !== String(c)
+      || unit.dataset.len !== String(len)
+      || !unit.classList.contains(`ship-unit--${orient}`);
 
     if (needsRebuild) {
       unit?.remove();
@@ -238,6 +245,7 @@ export function attachShipLayers(gridWrap, board, view) {
   gridWrap.appendChild(effects);
   gridWrap._shipLayer = layer;
   gridWrap._effectLayer = effects;
+  syncGridOverlays(gridWrap);
   scheduleSyncGridOverlays(gridWrap);
   if (!gridWrap._overlayObserver) {
     gridWrap._overlayObserver = new ResizeObserver(() => syncGridOverlays(gridWrap));
@@ -253,7 +261,7 @@ export function refreshShipLayers(gridWrap, board, view) {
     attachShipLayers(gridWrap, board, view);
     return;
   }
-  syncGridOverlays(gridWrap);
   updateShipLayer(gridWrap._shipLayer, board, view);
+  syncGridOverlays(gridWrap);
   scheduleSyncGridOverlays(gridWrap);
 }

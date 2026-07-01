@@ -43,19 +43,20 @@ function positionOverlayUnits(grid, layer) {
       unit.style.marginTop = '0';
       unit.style.marginLeft = '0';
       unit.style.left = `${r0.left - layerRect.left}px`;
-      unit.style.top = `${r0.top - layerRect.top - r0.height * 0.22}px`;
+      unit.style.top = `${r0.top - layerRect.top - r0.height * 0.28}px`;
       unit.style.width = `${r1.right - r0.left}px`;
-      unit.style.height = `${r0.height * 1.38}px`;
+      unit.style.height = `${r0.height * 1.42}px`;
     } else {
       const cellEnd = grid.querySelector(`[data-r="${r + len - 1}"][data-c="${c}"]`) || cell0;
       const r1 = cellEnd.getBoundingClientRect();
       unit.style.marginTop = '0';
       unit.style.marginLeft = '0';
-      unit.style.left = `${r0.left - layerRect.left - r0.width * 0.22}px`;
+      unit.style.left = `${r0.left - layerRect.left - r0.width * 0.28}px`;
       unit.style.top = `${r0.top - layerRect.top}px`;
-      unit.style.width = `${r0.width * 1.38}px`;
+      unit.style.width = `${r0.width * 1.42}px`;
       unit.style.height = `${r1.bottom - r0.top}px`;
     }
+    unit.classList.remove('ship-unit--pending');
   }
 
   for (const fx of layer.querySelectorAll('.cell-effect')) {

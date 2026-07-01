@@ -562,6 +562,10 @@ html, body {
 
 .ship-unit--hidden { display: none; }
 
+.ship-unit--pending {
+  visibility: hidden;
+}
+
 .ship-unit__hull {
   position: relative;
   width: 100%;

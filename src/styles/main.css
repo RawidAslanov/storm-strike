@@ -848,9 +848,48 @@ html, body {
 }
 
 .grid--enemy .cell--enemy-hit {
-  background: radial-gradient(circle at 50% 55%, rgba(255, 90, 30, 0.55) 0%, rgba(140, 25, 20, 0.75) 55%, rgba(60, 12, 12, 0.9) 100%) !important;
-  border-color: rgba(255, 120, 60, 0.65) !important;
-  box-shadow: inset 0 0 10px rgba(255, 160, 40, 0.45) !important;
+  background: radial-gradient(circle at 50% 55%, rgba(255, 100, 40, 0.65) 0%, rgba(160, 40, 20, 0.8) 55%, rgba(70, 15, 10, 0.92) 100%) !important;
+  border-color: rgba(255, 140, 60, 0.75) !important;
+  box-shadow: inset 0 0 12px rgba(255, 120, 40, 0.5) !important;
+}
+
+.hit-marker--damaged::before,
+.hit-marker--damaged::after {
+  background: linear-gradient(90deg, transparent, #ffcc88, #fff8ee, #ffcc88, transparent);
+  box-shadow: 0 0 8px rgba(255, 140, 60, 0.95);
+  height: 4px;
+}
+
+.grid--enemy .cell--enemy-sunk {
+  background: radial-gradient(circle at 50% 60%, rgba(20, 55, 85, 0.55) 0%, rgba(8, 22, 40, 0.95) 100%) !important;
+  border-color: rgba(100, 180, 220, 0.4) !important;
+  box-shadow: inset 0 0 14px rgba(0, 0, 0, 0.45) !important;
+}
+
+.sunk-badge {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--cell-size, 32px) * 0.22);
+  font-weight: 800;
+  font-family: var(--font-display);
+  color: #a8e8ff;
+  text-shadow: 0 0 8px rgba(0, 0, 0, 0.9);
+  letter-spacing: 0.5px;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.ship-unit--wreck {
+  opacity: 0.95;
+  filter: grayscale(0.2) brightness(0.85);
+  z-index: 4;
+}
+
+.ship-unit--wreck .ship-unit__img {
+  object-fit: contain;
 }
 
 .hit-marker {
@@ -904,11 +943,6 @@ html, body {
   border: 2px solid rgba(160, 200, 230, 0.55);
   border-radius: 50%;
   box-shadow: 0 0 0 3px rgba(100, 160, 220, 0.15);
-}
-
-.grid--enemy .cell--enemy-sunk {
-  background: radial-gradient(circle at 50% 60%, rgba(30, 75, 110, 0.5) 0%, rgba(10, 28, 50, 0.92) 100%) !important;
-  border-color: rgba(142, 200, 224, 0.35) !important;
 }
 
 .sunk-marker {
@@ -976,31 +1010,74 @@ html, body {
   border-color: rgba(212, 160, 84, 0.4) !important;
 }
 
+.cell--sonar-zone-edge {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.cell--sonar-zone-ship-edge {
+  box-shadow: inset 0 0 0 2px rgba(92, 184, 92, 0.55) !important;
+}
+
+.cell--sonar-zone-clear-edge {
+  box-shadow: inset 0 0 0 2px rgba(80, 160, 220, 0.45) !important;
+}
+
 .cell--sonar-zone-clear {
-  background: linear-gradient(145deg, rgba(50, 110, 180, 0.5), rgba(25, 60, 120, 0.42)) !important;
-  box-shadow: inset 0 0 8px rgba(100, 170, 230, 0.3);
+  background: linear-gradient(145deg, rgba(35, 90, 150, 0.35), rgba(20, 55, 100, 0.3)) !important;
 }
 
 .cell--sonar-zone-ship {
-  background: linear-gradient(145deg, rgba(40, 140, 90, 0.5), rgba(20, 90, 60, 0.42)) !important;
-  box-shadow: inset 0 0 10px rgba(92, 184, 92, 0.35);
-  animation: sonar-pulse 1.2s ease-out 2;
+  animation: none;
 }
 
 .cell--sonar-zone-center {
-  background: linear-gradient(145deg, rgba(18, 50, 95, 0.88), rgba(10, 32, 70, 0.92)) !important;
-  box-shadow: inset 0 0 12px rgba(80, 150, 210, 0.45);
+  z-index: 2;
 }
 
 .cell--sonar-zone-ship.cell--sonar-zone-center {
-  background: linear-gradient(145deg, rgba(30, 110, 72, 0.88), rgba(15, 65, 45, 0.92)) !important;
-  box-shadow: inset 0 0 14px rgba(92, 184, 92, 0.45);
+  background: linear-gradient(145deg, rgba(25, 100, 60, 0.92), rgba(12, 60, 38, 0.95)) !important;
+  box-shadow:
+    inset 0 0 16px rgba(92, 184, 92, 0.5),
+    0 0 12px rgba(92, 184, 92, 0.35) !important;
+  animation: sonar-pulse 1.4s ease-out 2;
+}
+
+.cell--sonar-zone-clear.cell--sonar-zone-center {
+  background: linear-gradient(145deg, rgba(30, 80, 140, 0.92), rgba(15, 45, 90, 0.95)) !important;
+  box-shadow:
+    inset 0 0 16px rgba(100, 180, 240, 0.45),
+    0 0 12px rgba(80, 160, 220, 0.3) !important;
+  animation: sonar-pulse 1.4s ease-out 2;
 }
 
 .sonar-zone-label {
-  font-size: 0.9em;
-  line-height: 1;
-  filter: drop-shadow(0 0 4px rgba(92, 184, 92, 0.6));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  font-size: 0.55em;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  line-height: 1.1;
+  text-align: center;
+  pointer-events: none;
+}
+
+.sonar-zone-label span {
+  font-size: 0.85em;
+  font-family: var(--font-display);
+}
+
+.sonar-zone-label--ship {
+  color: #b8ffc8;
+  filter: drop-shadow(0 0 6px rgba(92, 184, 92, 0.8));
+}
+
+.sonar-zone-label--water {
+  color: #b8e0ff;
+  filter: none;
 }
 
 .sonar-zone-label--empty {

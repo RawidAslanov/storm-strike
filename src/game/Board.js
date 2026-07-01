@@ -84,6 +84,10 @@ export class Board {
   }
 
   fire(r, c, options = {}) {
+    if (!options.sonarScan) {
+      this.sonarMarks.clear();
+    }
+
     if (this.shots[r][c] !== CELL.EMPTY && !options.allowRepeat) {
       return { valid: false, reason: 'already_shot' };
     }
@@ -175,9 +179,8 @@ export class Board {
 
     const base = found ? 'zone-ship' : 'zone-clear';
     for (const [nr, nc] of cells) {
-      this.revealCell(nr, nc);
       const isCenter = nr === r && nc === c;
-      this.sonarMarks.set(this.key(nr, nc), isCenter ? `${base}-center` : base);
+      this.sonarMarks.set(this.key(nr, nc), isCenter ? `${base}-center` : `${base}-edge`);
     }
 
     return { found, r, c, cells, zoneMark: base, invalid: false };

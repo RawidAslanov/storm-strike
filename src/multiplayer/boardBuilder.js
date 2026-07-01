@@ -34,9 +34,15 @@ export function buildEnemyBoard(you) {
 
   board.shots = you.myShots || createEmptyGrid();
   board.revealed = new Set(you.revealed || []);
-  board.fogCells = new Set(you.fogCells || []);
+  board.fogCells = new Set(you.enemyFogCells || []);
   board.sonarMarks = new Map(you.enemySonarMarks || []);
-  board.ships = [];
+  board.ships = (you.enemySunkShips || []).map(s => ({
+    ...s,
+    type: SHIP_TYPES[s.typeId],
+    typeId: s.typeId,
+    sunk: true,
+    hits: s.hits ?? s.cells?.length ?? 0,
+  }));
   board.grid = createEmptyGrid();
   return board;
 }

@@ -1,6 +1,6 @@
 import { GRID_SIZE, CELL, POWER_UPS, SHIP_TYPES, DIFFICULTY, FLEET_COMPOSITION, TOTAL_SHIPS } from '../game/constants.js';
 import { shipIconSvg } from './shipSprites.js';
-import { attachShipLayers, refreshShipLayers } from './shipLayer.js';
+import { attachShipLayers, refreshShipLayers, getShipOrigin } from './shipLayer.js';
 
 function findShipAt(board, r, c) {
   return board.ships.find(s => s.cells.some(([sr, sc]) => sr === r && sc === c));
@@ -40,40 +40,48 @@ export function createCellState(board, r, c, view = 'enemy', shipMap) {
       else if (shot === CELL.MISS) cls += ' cell--shield-deflect';
       return { cls, content: '', r, c, shot, shipType, segment, fogged: false };
     }
-  } else {
-    const sonarMark = board.getSonarMark?.(r, c);
-    if (sonarMark === 'zone-ship-center') {
-      cls += ' cell--sonar-zone-ship cell--sonar-zone-center';
-      content = '<span class="sonar-zone-label">🚢</span>';
-    } else if (sonarMark === 'zone-ship') {
-      cls += ' cell--sonar-zone-ship';
-    } else if (sonarMark === 'zone-clear-center') {
-      cls += ' cell--sonar-zone-clear cell--sonar-zone-center';
-      content = '<span class="sonar-zone-label sonar-zone-label--empty">○</span>';
-    } else if (sonarMark === 'zone-clear') {
-      cls += ' cell--sonar-zone-clear';
-    } else if (revealed && shot === CELL.EMPTY) {
-      cls += ' cell--scanned';
+  } else if (shot === CELL.EMPTY) {
+      const sonarMark = board.getSonarMark?.(r, c);
+      if (sonarMark === 'zone-ship-center') {
+        cls += ' cell--sonar-zone-ship cell--sonar-zone-center';
+        content = '<span class="sonar-zone-label sonar-zone-label--ship">⚓<span>КОРАБЛЬ</span></span>';
+      } else if (sonarMark === 'zone-ship-edge' || sonarMark === 'zone-ship') {
+        cls += ' cell--sonar-zone-edge cell--sonar-zone-ship-edge';
+      } else if (sonarMark === 'zone-clear-center') {
+        cls += ' cell--sonar-zone-clear cell--sonar-zone-center';
+        content = '<span class="sonar-zone-label sonar-zone-label--water">〰<span>ВОДА</span></span>';
+      } else if (sonarMark === 'zone-clear-edge' || sonarMark === 'zone-clear') {
+        cls += ' cell--sonar-zone-edge cell--sonar-zone-clear-edge';
+      } else if (board.isRevealed(r, c)) {
+        cls += ' cell--scanned';
+      }
     }
-  }
 
   switch (shot) {
     case CELL.HIT:
       cls += ' cell--hit';
       if (!isPlayer) {
         cls += ' cell--enemy-hit';
-        content = '<span class="hit-marker" aria-hidden="true"></span>';
+        content = '<span class="hit-marker hit-marker--damaged" title="Попадание"></span>';
       }
       break;
     case CELL.MISS:
       cls += ' cell--miss';
-      if (!isPlayer) content = '<span class="miss-marker" aria-hidden="true"></span>';
+      if (!isPlayer) content = '<span class="miss-marker" title="Промах"></span>';
       break;
     case CELL.SUNK:
       cls += ' cell--sunk';
       if (!isPlayer) {
         cls += ' cell--enemy-sunk';
-        content = '<span class="sunk-marker" aria-hidden="true"></span>';
+        const sunkShip = findShipAt(board, r, c);
+        if (sunkShip) {
+          const [or, oc] = getShipOrigin(sunkShip);
+          if (r === or && c === oc) {
+            content = '<span class="sunk-badge">💀 ПОТОПЛЕН</span>';
+          }
+        } else {
+          content = '<span class="sunk-marker" aria-hidden="true"></span>';
+        }
       }
       break;
     default:

@@ -212,6 +212,15 @@ export class GameRoom {
           hits: s.hits,
         })),
         enemySonarMarks: opponent ? [...opponent.board.sonarMarks.entries()] : [],
+        enemySunkShips: opponent
+          ? opponent.board.ships.filter(s => s.sunk).map(s => ({
+            typeId: s.typeId,
+            cells: s.cells,
+            sunk: true,
+            hits: s.hits,
+          }))
+          : [],
+        enemyFogCells: opponent ? [...opponent.board.fogCells] : [],
         shieldedShips: [...p.board.shieldedShips],
         revealed: [...p.board.revealed],
         fogCells: [...p.board.fogCells],
@@ -426,7 +435,9 @@ export class GameRoom {
         }
       }
     } else if (event.id === 'calm') {
-      // штиль — без бонусов, только ясная погода
+      for (const p of this.players.values()) {
+        p.board.clearFog();
+      }
     }
     return event;
   }

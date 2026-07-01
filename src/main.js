@@ -1,5 +1,8 @@
 import './styles/index.css';
 import { App } from './ui/App.js';
+import { preloadShipAssets } from './ui/shipLayer.js';
+
+preloadShipAssets();
 
 const root = document.getElementById('app');
 

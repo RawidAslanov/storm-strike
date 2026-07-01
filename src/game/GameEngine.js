@@ -335,6 +335,7 @@ export class GameEngine {
         break;
       }
       default:
+        this.enemyBoard.clearFog();
         break;
     }
   }

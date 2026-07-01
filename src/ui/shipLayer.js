@@ -47,7 +47,12 @@ function getHitSegments(ship, board) {
 }
 
 function shouldShowShip(ship, board, view) {
-  return view === 'player' && !ship.sunk;
+  if (view === 'player') return !ship.sunk;
+  return false;
+}
+
+function shouldShowEnemyWreck(ship, view) {
+  return view === 'enemy' && ship.sunk;
 }
 
 function buildShipUnit(ship, board, view) {
@@ -56,6 +61,7 @@ function buildShipUnit(ship, board, view) {
   const len = ship.cells.length;
   const hits = getHitSegments(ship, board);
   const showAlive = shouldShowShip(ship, board, view);
+  const showWreck = shouldShowEnemyWreck(ship, view);
   const showSinking = ship.sunk && !ship._sinkDone && view === 'player';
 
   const unit = document.createElement('div');
@@ -71,12 +77,16 @@ function buildShipUnit(ship, board, view) {
     unit.style.setProperty('--rock-dur', `${(3.1 + (ship.id % 5) * 0.38).toFixed(2)}s`);
   }
 
-  if (!showAlive && !showSinking) {
+  if (!showAlive && !showSinking && !showWreck) {
     unit.classList.add('ship-unit--hidden');
     return unit;
   }
 
-  if (ship.sunk) {
+  if (showWreck) {
+    unit.classList.add('ship-unit--wreck');
+  }
+
+  if (ship.sunk && view === 'player') {
     unit.classList.add('ship-unit--sinking');
     unit.addEventListener('animationend', () => { ship._sinkDone = true; }, { once: true });
   }
@@ -86,7 +96,7 @@ function buildShipUnit(ship, board, view) {
 
   const img = document.createElement('img');
   img.className = 'ship-unit__img';
-  img.src = ship.sunk ? FX_IMAGES.wreck : SHIP_IMAGES[ship.typeId];
+  img.src = (ship.sunk || showWreck) ? FX_IMAGES.wreck : SHIP_IMAGES[ship.typeId];
   img.alt = ship.type?.name || '';
   img.draggable = false;
   hull.appendChild(img);
@@ -153,10 +163,11 @@ export function updateShipLayer(layer, board, view) {
 
   for (const ship of board.ships) {
     const showAlive = shouldShowShip(ship, board, view);
+    const showWreck = shouldShowEnemyWreck(ship, view);
     const showSinking = ship.sunk && !ship._sinkDone && view === 'player';
     let unit = existing.get(ship.id);
 
-    if (!showAlive && !showSinking) {
+    if (!showAlive && !showSinking && !showWreck) {
       if (unit && !unit.classList.contains('ship-unit--sinking')) unit.remove();
       continue;
     }
@@ -165,7 +176,8 @@ export function updateShipLayer(layer, board, view) {
 
     const hits = getHitSegments(ship, board);
     const needsRebuild = !unit
-      || (ship.sunk && !unit.classList.contains('ship-unit--sinking'))
+      || (showWreck && !unit.classList.contains('ship-unit--wreck'))
+      || (ship.sunk && view === 'player' && !unit.classList.contains('ship-unit--sinking'))
       || unit.dataset.hitKey !== hits.join(',');
 
     if (needsRebuild) {
@@ -192,6 +204,17 @@ export function updateShipLayer(layer, board, view) {
       }
     }
   }
+}
+
+export function preloadShipAssets() {
+  const urls = [...Object.values(SHIP_IMAGES), ...Object.values(FX_IMAGES)];
+  return Promise.all(urls.map((src) => new Promise((resolve) => {
+    const img = new Image();
+    img.decoding = 'async';
+    img.onload = () => resolve(src);
+    img.onerror = () => resolve(src);
+    img.src = src;
+  })));
 }
 
 export function attachShipLayers(gridWrap, board, view) {

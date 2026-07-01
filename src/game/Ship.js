@@ -16,7 +16,8 @@ export function createShip(typeId, cells) {
     hits: 0,
     sunk: false,
     armorUsed: false,
-    revealed: true,
+    broadsideUsed: false,
+    revealed: typeId !== 'submarine',
   };
 }
 

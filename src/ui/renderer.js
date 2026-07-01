@@ -258,6 +258,19 @@ export function renderPlacementGrid(game, onCellClick) {
 
   grid.addEventListener('pointerleave', clearPreview);
 
+  let touchDragging = false;
+  grid.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'touch' || e.pointerType === 'pen') touchDragging = true;
+  });
+  grid.addEventListener('pointerup', () => { touchDragging = false; });
+  grid.addEventListener('pointercancel', () => { touchDragging = false; });
+  grid.addEventListener('pointermove', (e) => {
+    if (!touchDragging) return;
+    const target = document.elementFromPoint(e.clientX, e.clientY);
+    const cell = target?.closest?.('.cell');
+    if (cell && cellEls.includes(cell)) showPreview(cell);
+  });
+
   for (const cell of cellEls) {
     cell.addEventListener('pointerenter', () => showPreview(cell));
     cell.addEventListener('pointerdown', (e) => {
@@ -433,6 +446,8 @@ export function renderPowerUps(game, onSelect) {
       <span class="powerup-btn__count">${count}</span>
     `;
     btn.title = pu.desc;
+    btn.setAttribute('aria-label', `${pu.name}, осталось ${count}`);
+    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
     btn.disabled = count === 0 && !active;
     btn.addEventListener('click', () => onSelect(pu.id));
     container.appendChild(btn);
@@ -449,6 +464,8 @@ export function updatePowerUps(container, game) {
     const active = game.activePowerUp === id || (id === 'shield' && game.shieldMode);
     btn.className = `powerup-btn${active ? ' powerup-btn--active' : ''}${count === 0 ? ' powerup-btn--empty' : ''}`;
     btn.querySelector('.powerup-btn__count').textContent = count;
+    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    btn.setAttribute('aria-label', `${POWER_UPS[id].name}, осталось ${count}`);
     btn.disabled = count === 0 && !active;
   }
 }
@@ -456,6 +473,9 @@ export function updatePowerUps(container, game) {
 export function renderLog(log) {
   const el = document.createElement('div');
   el.className = 'battle-log';
+  el.setAttribute('role', 'log');
+  el.setAttribute('aria-live', 'polite');
+  el.setAttribute('aria-relevant', 'additions');
   for (const entry of log.slice(0, 6)) {
     const line = document.createElement('div');
     line.className = 'battle-log__line';

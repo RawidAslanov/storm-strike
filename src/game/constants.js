@@ -11,11 +11,11 @@ export const CELL = {
 };
 
 export const SHIP_TYPES = {
-  destroyer:  { id: 'destroyer',  name: 'Шлюп',         size: 2, icon: '⛵', ability: 'speed',   desc: 'Быстрый разведчик' },
+  destroyer:  { id: 'destroyer',  name: 'Шлюп',         size: 2, icon: '⛵', ability: 'speed',   desc: 'Локатор сканирует 5×5' },
   cruiser:    { id: 'cruiser',    name: 'Бриг',         size: 3, icon: '🏴‍☠️', ability: 'armor',   desc: 'Первая пушка — рикошет' },
   battleship: { id: 'battleship', name: 'Галеон',       size: 4, icon: '💣', ability: 'broadside', desc: 'Бортовой залп 1×3' },
-  carrier:    { id: 'carrier',    name: 'Флагман',      size: 5, icon: '👑', ability: 'drone',   desc: 'Разведка вороньим гнездом' },
-  submarine:  { id: 'submarine',  name: 'Нырялка',    size: 3, icon: '🦑', ability: 'stealth', desc: 'Скрыта под водой' },
+  carrier:    { id: 'carrier',    name: 'Флагман',      size: 5, icon: '👑', ability: 'drone',   desc: 'Каждый ход открывает клетку' },
+  submarine:  { id: 'submarine',  name: 'Нырялка',    size: 3, icon: '🦑', ability: 'stealth', desc: 'Скрыта до первого попадания' },
 };
 
 export const FLEET = ['destroyer', 'destroyer', 'cruiser', 'cruiser', 'battleship', 'carrier', 'submarine'];
@@ -60,7 +60,7 @@ export const POWER_UPS = {
     id: 'smoke',
     name: 'Дымовая завеса',
     icon: '💨',
-    desc: 'Враг промахнётся 1 ход (3× за игру)',
+    desc: 'Враг промахнётся 1 ход (2× за игру)',
     cost: 0,
     color: '#aaaacc',
   },
@@ -97,4 +97,4 @@ export const COMBO_THRESHOLDS = [
 ];
 
 /** Стартовый запас способностей за игру */
-export const STARTING_INVENTORY = { sonar: 1, chain: 2, shield: 2, smoke: 3 };
+export const STARTING_INVENTORY = { sonar: 1, chain: 2, shield: 2, smoke: 2 };

@@ -562,6 +562,10 @@ html, body {
 
 .ship-unit--hidden { display: none; }
 
+.ship-unit--pending {
+  visibility: hidden;
+}
+
 .ship-unit__hull {
   position: relative;
   width: 100%;
@@ -1764,6 +1768,139 @@ html, body {
   animation: fadeIn 0.3s ease;
   max-width: 90%;
   text-align: center;
+}
+
+.toast--success {
+  background: rgba(46, 140, 72, 0.95);
+}
+
+.toast--info {
+  background: rgba(40, 100, 160, 0.95);
+}
+
+.toast--error {
+  background: rgba(255, 51, 85, 0.9);
+}
+
+.connecting-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  background: rgba(5, 13, 26, 0.82);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.connecting-overlay__box {
+  text-align: center;
+  max-width: 320px;
+  color: var(--text);
+}
+
+.connecting-overlay__spinner {
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 16px;
+  border: 3px solid rgba(236, 192, 80, 0.25);
+  border-top-color: var(--gold);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+.connecting-overlay__hint {
+  color: var(--text-dim);
+  font-size: 13px;
+  margin-top: 8px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 350;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modal {
+  background: linear-gradient(165deg, #12243a 0%, #0a1628 100%);
+  border: 1px solid rgba(236, 192, 80, 0.25);
+  border-radius: var(--radius);
+  padding: 24px;
+  max-width: 360px;
+  width: 100%;
+  text-align: center;
+}
+
+.modal h3 {
+  font-family: var(--font-display);
+  color: var(--gold);
+  margin-bottom: 10px;
+}
+
+.modal p {
+  color: var(--text-dim);
+  margin-bottom: 18px;
+  line-height: 1.45;
+}
+
+.modal__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.battle-tabs {
+  display: none;
+  gap: 8px;
+  width: 100%;
+  max-width: 360px;
+  margin: 0 auto 10px;
+}
+
+.battle-tabs__btn {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid rgba(236, 192, 80, 0.2);
+  background: rgba(10, 22, 40, 0.8);
+  color: var(--text-dim);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.battle-tabs__btn--active {
+  background: rgba(236, 192, 80, 0.15);
+  border-color: rgba(236, 192, 80, 0.45);
+  color: var(--gold);
+}
+
+@media (max-width: 719px) {
+  .battle-tabs {
+    display: flex;
+  }
+
+  .boards--tabs .board-panel {
+    display: none;
+  }
+
+  .boards--tabs .board-panel--tab-active {
+    display: flex;
+  }
+}
+
+@media (min-width: 720px) {
+  .boards--tabs .board-panel {
+    display: flex;
+  }
 }
 
 /* ── Cannonball & impact FX ── */

@@ -10,12 +10,14 @@ export const MSG = {
   SELECT_POWERUP: 'select_powerup',
   USE_SMOKE: 'use_smoke',
   PING: 'ping',
+  REJOIN_ROOM: 'rejoin_room',
 
   // server → client
   ROOM_CREATED: 'room_created',
   ROOM_JOINED: 'room_joined',
   PLAYER_JOINED: 'player_joined',
   PLAYER_LEFT: 'player_left',
+  PLAYER_DISCONNECTED: 'player_disconnected',
   LOBBY_UPDATE: 'lobby_update',
   GAME_START: 'game_start',
   PLACEMENT_UPDATE: 'placement_update',
@@ -39,6 +41,7 @@ export function serializeShotResult(res) {
     found: res.found || [],
     shieldBlocked: res.shieldBlocked || false,
     armorBlocked: res.armorBlocked || false,
+    smokeBlocked: res.smokeBlocked || false,
     ship: res.ship ? { typeId: res.ship.typeId, name: res.ship.type?.name } : null,
   };
 }

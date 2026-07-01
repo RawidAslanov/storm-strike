@@ -21,6 +21,7 @@ export class GameRoom {
     this.turnNumber = 0;
     this.storm = new StormSystem();
     this.log = [];
+    this.fogExpiresAt = 0;
   }
 
   genId() {
@@ -52,6 +53,50 @@ export class GameRoom {
 
   removePlayer(id) {
     this.players.delete(id);
+  }
+
+  detachPlayer(id) {
+    const player = this.players.get(id);
+    if (!player) return null;
+    player.ws = null;
+    player.disconnectedAt = Date.now();
+    return player;
+  }
+
+  reattachPlayer(id, ws) {
+    const player = this.players.get(id);
+    if (!player) return null;
+    if (player.disconnectedAt && Date.now() - player.disconnectedAt > 90_000) return null;
+    player.ws = ws;
+    player.disconnectedAt = null;
+    return player;
+  }
+
+  handleDisconnect(id) {
+    const player = this.players.get(id);
+    if (!player) return { removed: true };
+
+    if (this.phase === 'battle' && this.players.size === 2) {
+      const opponent = this.opponentOf(id);
+      this.phase = 'finished';
+      if (opponent) {
+        this.addLog(`🏳 ${player.name} отключился — победа ${opponent.name}`);
+      }
+      this.removePlayer(id);
+      return {
+        forfeit: true,
+        winnerId: opponent?.id || null,
+        reason: 'disconnect',
+      };
+    }
+
+    if (this.phase === 'placement') {
+      this.detachPlayer(id);
+      return { disconnected: true, playerId: id };
+    }
+
+    this.removePlayer(id);
+    return { removed: true };
   }
 
   getPlayer(id) {
@@ -103,6 +148,11 @@ export class GameRoom {
           orientation: p.orientation,
           currentShip: p.placementShips[p.placementIndex]?.typeId || null,
           placedShips: p.board.ships.length,
+          myShips: p.board.ships.map(s => ({
+            id: s.id,
+            typeId: s.typeId,
+            cells: s.cells,
+          })),
         };
       }
     }
@@ -306,7 +356,7 @@ export class GameRoom {
       opponent.smokeActive = false;
       this.addLog(`💨 Дымовая завеса ${opponent.name} сбила прицел!`);
       this.endTurn(player);
-      return { ok: true, results: [{ valid: true, smokeBlocked: true }], gameOver: false };
+      return { ok: true, results: [serializeShotResult({ valid: true, smokeBlocked: true })], gameOver: false };
     }
 
     if (opponent.board.shots[row][col] !== CELL.EMPTY) {
@@ -317,7 +367,8 @@ export class GameRoom {
 
     if (player.activePowerUp === 'sonar' && player.inventory.sonar > 0) {
       player.inventory.sonar--;
-      const ping = opponent.board.sonarScanZone(row, col);
+      const sonarRadius = player.board.hasLivingShipType('destroyer') ? 2 : 1;
+      const ping = opponent.board.sonarScanZone(row, col, sonarRadius);
       if (ping.invalid) return { ok: false, error: 'Клетка уже проверена' };
       results = [{
         valid: true,
@@ -349,7 +400,9 @@ export class GameRoom {
       player.activePowerUp = null;
       this.addLog(`⚡ ${player.name}: цепная молния!`);
     } else {
-      results = [opponent.board.fire(row, col)];
+      const first = opponent.board.fire(row, col);
+      results = [first];
+      if (first.extraShots?.length) results.push(...first.extraShots);
     }
 
     if (!results.length || !results[0].valid) {
@@ -357,6 +410,8 @@ export class GameRoom {
     }
 
     this.processResults(player, results);
+    const comboReward = player._lastComboReward || null;
+    player._lastComboReward = null;
 
     const gameOver = allShipsSunk(opponent.board.ships) || opponent.board.allShipsSunk();
     let winnerId = null;
@@ -376,11 +431,22 @@ export class GameRoom {
       gameOver,
       winnerId,
       storm,
+      comboReward,
     };
+  }
+
+  flattenResults(results) {
+    const flat = [];
+    for (const res of results) {
+      flat.push(res);
+      if (res.extraShots?.length) flat.push(...res.extraShots);
+    }
+    return flat;
   }
 
   processResults(player, results) {
     let anyHit = false;
+    player._lastComboReward = null;
     for (const res of results) {
       if (res.sonar) continue;
       if (res.hit) {
@@ -402,6 +468,7 @@ export class GameRoom {
           player.inventory[threshold.reward]++;
           player.stats.combos++;
           this.addLog(`${threshold.label} ${player.name}`);
+          player._lastComboReward = threshold;
           break;
         }
       }
@@ -414,10 +481,19 @@ export class GameRoom {
     this.currentTurn = this.opponentOf(player.id)?.id || null;
     this.turnNumber++;
 
+    if (this.currentTurn) {
+      this.applyCarrierDrone(this.currentTurn);
+    }
+
     for (const p of this.players.values()) {
       p.board.sonarMarks.clear();
       p.activePowerUp = null;
       p.shieldMode = false;
+    }
+
+    if (this.fogExpiresAt && this.turnNumber >= this.fogExpiresAt) {
+      for (const p of this.players.values()) p.board.clearFog();
+      this.fogExpiresAt = 0;
     }
 
     const stormEvent = this.storm.tick(this.turnNumber);
@@ -427,9 +503,21 @@ export class GameRoom {
     return stormEvent;
   }
 
+  applyCarrierDrone(playerId) {
+    const player = this.players.get(playerId);
+    const opponent = this.opponentOf(playerId);
+    if (!player || !opponent) return;
+    if (!player.board.hasLivingShipType('carrier')) return;
+    const reveal = opponent.board.carrierRevealRandom();
+    if (reveal) {
+      this.addLog(`👑 ${player.name}: флагман открыл клетку [${reveal.r + 1},${reveal.c + 1}]`);
+    }
+  }
+
   applyStorm(event) {
     this.addLog(`${event.icon} ${event.name}: ${event.desc}`);
     if (event.id === 'fog') {
+      this.fogExpiresAt = this.turnNumber + (event.duration || 2);
       for (const p of this.players.values()) {
         p.board.applyFog(0.3);
       }

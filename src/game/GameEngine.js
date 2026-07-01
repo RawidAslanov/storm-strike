@@ -161,7 +161,8 @@ export class GameEngine {
 
     if (this.activePowerUp === 'sonar' && this.inventory.sonar > 0) {
       this.inventory.sonar--;
-      const ping = this.enemyBoard.sonarScanZone(row, col);
+      const sonarRadius = this.playerBoard.hasLivingShipType('destroyer') ? 2 : 1;
+      const ping = this.enemyBoard.sonarScanZone(row, col, sonarRadius);
       if (ping.invalid) return null;
       results = [{
         valid: true,
@@ -189,7 +190,9 @@ export class GameEngine {
       this.addLog('⚡ Цепная молния!');
       this.activePowerUp = null;
     } else {
-      results = [this.enemyBoard.fire(row, col)];
+      const first = this.enemyBoard.fire(row, col);
+      results = [first];
+      if (first.extraShots?.length) results.push(...first.extraShots);
     }
 
     if (!results.length || !results[0].valid) return null;
@@ -306,6 +309,13 @@ export class GameEngine {
   finishAiTurn() {
     this.turnNumber++;
     this.turn = 'player';
+
+    if (this.playerBoard.hasLivingShipType('carrier')) {
+      const reveal = this.enemyBoard.carrierRevealRandom();
+      if (reveal) {
+        this.addLog(`👑 Флагман открыл клетку [${reveal.r + 1},${reveal.c + 1}]`);
+      }
+    }
 
     const stormEvent = this.storm.tick(this.turnNumber);
     if (stormEvent) this.applyStorm(stormEvent);

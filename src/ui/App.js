@@ -1,7 +1,7 @@
 import { GameEngine } from '../game/GameEngine.js';
 import { PHASE, GAME_MODE, TOTAL_SHIPS } from '../game/constants.js';
 import { MultiplayerClient } from '../multiplayer/MultiplayerClient.js';
-import { getMultiplayerGameState } from '../multiplayer/boardBuilder.js';
+import { getMultiplayerGameState, syncPlacementGame } from '../multiplayer/boardBuilder.js';
 import {
   renderGrid, updateGrid, initGridLayers, renderPlacementGrid, renderPowerUps, updatePowerUps,
   renderShipList, renderLog, updateLog, showStormOverlay,
@@ -30,6 +30,10 @@ export class App {
     this.battleRefs = null;
     this.placementGrid = null;
     this.musicBar = null;
+    this.mpShotAnimating = false;
+    this.disconnectModal = null;
+    this.connectingOverlay = null;
+    this.mpForfeit = false;
 
     this.initPersistentLayers();
 
@@ -155,6 +159,7 @@ export class App {
     switch (event) {
       case 'room_created':
       case 'room_joined':
+        this.hideConnecting();
         this.game.phase = PHASE.LOBBY;
         this.currentPhase = null;
         break;
@@ -165,13 +170,12 @@ export class App {
         }
         break;
       case 'placement_update':
-        if (data.you) {
-          if (!this.mpLocalGame) {
-            this.mpLocalGame = new GameEngine();
-            this.mpLocalGame.setupPlacement();
-          }
-          this.mpLocalGame.placementIndex = data.you.placementIndex;
-          this.mpLocalGame.placementOrientation = data.you.orientation || 'h';
+        if (data.you && this.mpLocalGame) {
+          syncPlacementGame(this.mpLocalGame, data.you);
+        } else if (data.you && !this.mpLocalGame) {
+          this.mpLocalGame = new GameEngine();
+          this.mpLocalGame.setupPlacement();
+          syncPlacementGame(this.mpLocalGame, data.you);
         }
         if (this.game.phase === PHASE.PLACEMENT && this.placementGrid) {
           this.updateMpPlacementUI(data);
@@ -189,17 +193,8 @@ export class App {
         }
         break;
       case 'shot_result':
-        for (const res of data.results || []) {
-          if (res.sonar) sounds.sonar();
-          else if (res.hit) { sounds.hit(); if (res.sunk) setTimeout(() => sounds.sunk(), 200); }
-          else if (!res.smokeBlocked) sounds.miss();
-        }
-        this.mpState = getMultiplayerGameState(this.mp, data);
-        if (this.currentPhase === PHASE.BATTLE && this.battleRefs) {
-          this.updateBattleUI(this.getBattleState());
-          return;
-        }
-        break;
+        this._handleMpShotResult(data);
+        return;
       case 'state_sync':
         this.mpState = getMultiplayerGameState(this.mp, data);
         if (this.currentPhase === PHASE.BATTLE && this.battleRefs) {
@@ -210,9 +205,14 @@ export class App {
       case 'storm':
         sounds.storm();
         showStormOverlay(data);
-        break;
+        this.mpState = getMultiplayerGameState(this.mp, this.mp.state?.battle || {});
+        if (this.currentPhase === PHASE.BATTLE && this.battleRefs) {
+          this.updateBattleUI(this.getBattleState());
+        }
+        return;
       case 'game_over':
         sounds[data.winnerId === this.mp.playerId ? 'win' : 'lose']();
+        this.mpForfeit = data.reason === 'disconnect';
         this.game.phase = PHASE.GAME_OVER;
         this.currentPhase = null;
         this.battleRefs = null;
@@ -234,11 +234,32 @@ export class App {
           return;
         }
         break;
+      case 'player_left':
+        this.showToast('Соперник покинул комнату', 'info');
+        if (this.game.phase === PHASE.LOBBY) {
+          this.updateLobbyUI();
+          return;
+        }
+        break;
+      case 'player_disconnected':
+        this.showToast('Соперник отключился — ожидание переподключения...', 'info');
+        break;
+      case 'reconnecting':
+        this.showConnecting(`Переподключение... (попытка ${data.attempt})`);
+        break;
+      case 'reconnected':
+        this.hideConnecting();
+        this.hideDisconnectModal();
+        this.showToast('Соединение восстановлено', 'success');
+        break;
       case 'error':
-        this.showToast(data.message || 'Ошибка');
+        this.showToast(data.message || 'Ошибка', 'error');
         return;
       case 'disconnected':
-        this.showToast('Соединение потеряно');
+        this.hideConnecting();
+        if (!this.mp?.intentionalClose) {
+          this.showDisconnectModal();
+        }
         return;
     }
     this.render();
@@ -304,12 +325,118 @@ export class App {
     setTimeout(() => el.remove(), 1500);
   }
 
-  showToast(msg) {
+  showToast(msg, type = 'error') {
     const el = document.createElement('div');
-    el.className = 'toast';
+    el.className = `toast toast--${type}`;
+    el.setAttribute('role', 'status');
     el.textContent = msg;
     document.body.appendChild(el);
     setTimeout(() => el.remove(), 3000);
+  }
+
+  showConnecting(msg = 'Подключение к серверу...') {
+    this.hideConnecting();
+    const el = document.createElement('div');
+    el.className = 'connecting-overlay';
+    el.innerHTML = `<div class="connecting-overlay__box"><div class="connecting-overlay__spinner"></div><p>${msg}</p><p class="connecting-overlay__hint">Сервер может просыпаться до минуты</p></div>`;
+    document.body.appendChild(el);
+    this.connectingOverlay = el;
+  }
+
+  hideConnecting() {
+    this.connectingOverlay?.remove();
+    this.connectingOverlay = null;
+  }
+
+  showDisconnectModal() {
+    if (this.disconnectModal) return;
+    const el = document.createElement('div');
+    el.className = 'modal-overlay';
+    el.innerHTML = `
+      <div class="modal" role="alertdialog" aria-labelledby="disconnect-title">
+        <h3 id="disconnect-title">Соединение потеряно</h3>
+        <p>Проверьте интернет и попробуйте переподключиться к комнате.</p>
+        <div class="modal__actions">
+          <button class="btn btn--primary" id="modal-reconnect">Переподключиться</button>
+          <button class="btn btn--secondary" id="modal-menu">В меню</button>
+        </div>
+      </div>
+    `;
+    el.querySelector('#modal-reconnect').addEventListener('click', async () => {
+      sounds.click();
+      this.showConnecting('Переподключение...');
+      try {
+        await this.mp?.reconnect();
+      } catch {
+        this.hideConnecting();
+        this.showToast('Не удалось переподключиться', 'error');
+      }
+    });
+    el.querySelector('#modal-menu').addEventListener('click', () => {
+      sounds.click();
+      this.hideDisconnectModal();
+      this.mp?.disconnect();
+      this.mp = null;
+      this.mpState = null;
+      this.game.phase = PHASE.MENU;
+      this.currentPhase = null;
+      this.battleRefs = null;
+      this.render();
+    });
+    document.body.appendChild(el);
+    this.disconnectModal = el;
+  }
+
+  hideDisconnectModal() {
+    this.disconnectModal?.remove();
+    this.disconnectModal = null;
+  }
+
+  async _handleMpShotResult(data) {
+    if (this.mpShotAnimating) {
+      this.mpState = getMultiplayerGameState(this.mp, data);
+      return;
+    }
+
+    const iShot = data.shooterId === this.mp?.playerId;
+    const animResults = (data.results || []).filter(r => !r.sonar);
+    const hasSmoke = animResults.some(r => r.smokeBlocked);
+
+    for (const res of data.results || []) {
+      if (res.sonar) sounds.sonar();
+      else if (res.hit) { sounds.hit(); if (res.sunk) setTimeout(() => sounds.sunk(), 200); }
+      else if (res.smokeBlocked) sounds.miss();
+      else if (!res.hit) sounds.miss();
+    }
+
+    if (data.comboReward?.label) {
+      sounds.combo();
+      this.showComboPopup(data.comboReward.label);
+    }
+
+    if (hasSmoke) {
+      this.showToast('💨 Дымовая завеса сбила прицел!', 'info');
+    }
+
+    this.mpShotAnimating = true;
+    if (this.currentPhase === PHASE.BATTLE && this.battleRefs && animResults.length) {
+      const wrap = iShot
+        ? this.battleRefs.container.querySelector('#enemy-grid')
+        : this.battleRefs.container.querySelector('#player-grid');
+      const view = iShot ? 'enemy' : 'player';
+      if (wrap && !animResults.every(r => r.smokeBlocked)) {
+        await animateCannonVolley(wrap, animResults.filter(r => r.smokeBlocked === false), view);
+      }
+    }
+
+    this.mpState = getMultiplayerGameState(this.mp, data);
+    this.mpShotAnimating = false;
+
+    if (this.currentPhase === PHASE.BATTLE && this.battleRefs) {
+      this.updateBattleUI(this.getBattleState());
+      return;
+    }
+    this.render();
   }
 
   getOpponentPlacement(data) {
@@ -335,7 +462,7 @@ export class App {
 
     const hintEl = this.container.querySelector('.lobby__hint');
     if (hintEl) {
-      hintEl.textContent = isHost ? 'Отправьте код другу' : 'Ожидание начала...';
+      hintEl.textContent = isHost ? 'Нажмите код — скопировать ссылку' : 'Ожидание начала...';
     }
 
     const codeEl = this.container.querySelector('.lobby__code');
@@ -437,7 +564,7 @@ export class App {
             <input class="input" id="room-code" placeholder="Код комнаты" maxlength="6" />
             <button class="btn btn--secondary" id="btn-join">Войти</button>
           </div>
-          <p class="menu-hint menu-hint--small">Для мультиплеера: <code>npm run server</code></p>
+          <p class="menu-hint menu-hint--small menu-hint--dev"${import.meta.env.PROD ? ' hidden' : ''}>Для мультиплеера локально: <code>npm run server</code></p>
         </div>
       </div>
     `;
@@ -476,11 +603,13 @@ export class App {
       this.playerName = name;
       this.mode = GAME_MODE.MULTIPLAYER;
       this.setupMultiplayer();
+      this.showConnecting('Создание комнаты...');
       try {
         await this.mp.connect();
         this.mp.createRoom(name);
       } catch {
-        this.showToast('Не удалось подключиться. Запустите: npm run server');
+        this.hideConnecting();
+        this.showToast('Не удалось подключиться к серверу', 'error');
       }
     });
 
@@ -489,18 +618,28 @@ export class App {
       sounds.click();
       const name = container.querySelector('#player-name').value.trim() || 'Капитан';
       const code = container.querySelector('#room-code').value.trim();
-      if (!code) return this.showToast('Введите код комнаты');
+      if (!code) return this.showToast('Введите код комнаты', 'error');
       localStorage.setItem('ss_name', name);
       this.playerName = name;
       this.mode = GAME_MODE.MULTIPLAYER;
       this.setupMultiplayer();
+      this.showConnecting('Вход в комнату...');
       try {
         await this.mp.connect();
         this.mp.joinRoom(code, name);
       } catch {
-        this.showToast('Не удалось подключиться к серверу');
+        this.hideConnecting();
+        this.showToast('Не удалось подключиться к серверу', 'error');
       }
     });
+
+    const roomFromUrl = new URLSearchParams(location.search).get('room');
+    if (roomFromUrl) {
+      const input = container.querySelector('#room-code');
+      if (input) input.value = roomFromUrl.toUpperCase();
+      container.querySelector('#online-panel').hidden = false;
+      container.querySelector('#solo-panel').hidden = true;
+    }
   }
 
   renderLobby(container) {
@@ -513,7 +652,7 @@ export class App {
         <div class="lobby__code-wrap">
           <h2 class="lobby__title">Комната</h2>
           <div class="lobby__code" id="lobby-code">${this.mp?.roomCode || '----'}</div>
-          <p class="lobby__hint">${isHost ? 'Отправьте код другу' : 'Ожидание начала...'}</p>
+          <p class="lobby__hint">${isHost ? 'Нажмите код — скопировать ссылку' : 'Ожидание начала...'}</p>
         </div>
         <div class="lobby__players" id="lobby-players">
           ${players.map(p => `<div class="lobby__player">${p.name} ${p.id === this.mp?.playerId ? '(вы)' : ''}</div>`).join('')}
@@ -527,7 +666,8 @@ export class App {
     codeEl?.addEventListener('click', () => {
       const code = this.mp?.roomCode;
       if (!code) return;
-      navigator.clipboard?.writeText(code).then(() => this.showToast('Код скопирован!'));
+      const link = `${location.origin}${location.pathname}?room=${code}`;
+      navigator.clipboard?.writeText(link).then(() => this.showToast('Ссылка скопирована!', 'success'));
     });
 
     container.querySelector('#btn-leave').addEventListener('click', () => {
@@ -600,7 +740,6 @@ export class App {
     this.placementGrid = renderPlacementGrid(localGame, (r, c) => {
       resumeAudio(); sounds.click();
       this.mp.placeShip(r, c);
-      localGame.placeShipAt(r, c, { skipBattle: true });
     });
     container.querySelector('#placement-grid').appendChild(this.placementGrid);
     this.placementGrid._attachLayers?.();
@@ -610,13 +749,14 @@ export class App {
 
     container.querySelector('#btn-rotate').addEventListener('click', () => {
       sounds.click();
-      localGame.rotatePlacement();
+      if (localGame) {
+        localGame.placementOrientation = localGame.placementOrientation === 'h' ? 'v' : 'h';
+      }
       this.mp.rotate();
     });
     container.querySelector('#btn-auto').addEventListener('click', () => {
       sounds.click();
       this.mp.autoPlace();
-      localGame.autoPlacePlayerFleet({ skipBattle: true });
     });
 
     this.updateMpPlacementUI({ players: {} });
@@ -629,7 +769,7 @@ export class App {
     container.innerHTML = `
       <div class="screen screen--battle">
         <header class="hud hud--glass">
-          <div class="hud__turn ${isPlayerTurn ? 'hud__turn--player' : 'hud__turn--enemy'}">
+          <div class="hud__turn ${isPlayerTurn ? 'hud__turn--player' : 'hud__turn--enemy'}" aria-live="polite">
             ${this.getBattleHint(state)}
           </div>
           <div class="hud__row">
@@ -637,13 +777,17 @@ export class App {
           </div>
           <div class="hud__enemy-info">🎯 У соперника: <strong>${enemyRemaining}</strong> из ${TOTAL_SHIPS} кораблей</div>
         </header>
-        <div class="boards">
-          <div class="board-panel">
+        <div class="battle-tabs" role="tablist" aria-label="Поля боя">
+          <button type="button" class="battle-tabs__btn battle-tabs__btn--active" role="tab" aria-selected="true" data-tab="enemy">🎯 Враг</button>
+          <button type="button" class="battle-tabs__btn" role="tab" aria-selected="false" data-tab="player">⚓ Мой флот</button>
+        </div>
+        <div class="boards boards--tabs">
+          <div class="board-panel board-panel--tab-active" data-board="enemy">
             <h3 class="board-panel__title">Поле противника</h3>
             <div id="enemy-grid" class="grid-wrap"></div>
             <div id="enemy-fleet"></div>
           </div>
-          <div class="board-panel board-panel--player">
+          <div class="board-panel board-panel--player" data-board="player">
             <h3 class="board-panel__title">Ваш флот</h3>
             <div id="player-grid" class="grid-wrap"></div>
             <div id="player-fleet"></div>
@@ -678,6 +822,20 @@ export class App {
     const powerups = renderPowerUps(puGame, handlers.onPowerUp);
     container.querySelector('#powerups').appendChild(powerups);
     container.querySelector('#battle-log').appendChild(renderLog(log));
+
+    container.querySelectorAll('.battle-tabs__btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const tab = btn.dataset.tab;
+        container.querySelectorAll('.battle-tabs__btn').forEach((b) => {
+          const active = b.dataset.tab === tab;
+          b.classList.toggle('battle-tabs__btn--active', active);
+          b.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+        container.querySelectorAll('[data-board]').forEach((panel) => {
+          panel.classList.toggle('board-panel--tab-active', panel.dataset.board === tab);
+        });
+      });
+    });
 
     this.battleRefs = {
       container,
@@ -810,12 +968,15 @@ export class App {
     const won = isMp
       ? this.mpState?.winnerId === this.mp?.playerId
       : this.game.winner === 'player';
+    const forfeit = isMp && this.mpForfeit;
 
     container.innerHTML = `
       <div class="screen screen--gameover ${won ? 'screen--victory' : 'screen--defeat'}">
         <div class="gameover__icon">${won ? '🏆' : '💀'}</div>
         <h2 class="gameover__title">${won ? 'ПОБЕДА!' : 'ПОРАЖЕНИЕ'}</h2>
-        <p class="gameover__sub">${won ? 'Вражеский флот уничтожен!' : 'Ваш флот потоплен...'}</p>
+        <p class="gameover__sub">${won
+    ? (forfeit ? 'Соперник отключился — победа засчитана!' : 'Вражеский флот уничтожен!')
+    : 'Ваш флот потоплен...'}</p>
         <button class="btn btn--primary btn--large" id="btn-restart">⚓ Новая битва</button>
       </div>
     `;

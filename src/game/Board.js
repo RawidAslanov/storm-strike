@@ -1,13 +1,14 @@
 import { GRID_SIZE, CELL } from './constants.js';
-import { createEmptyGrid, findShipAt, markSunkArea, getAdjacentCells, getCrossCells, getAreaCells } from './Ship.js';
+import { createEmptyGrid, findShipAt, markSunkArea } from './Ship.js';
 
 export class Board {
   constructor() {
     this.grid = createEmptyGrid();
     this.ships = [];
     this.shots = createEmptyGrid();
-    this.shields = new Set();
+    this.shieldedShips = new Set();
     this.revealed = new Set();
+    this.sonarMarks = new Map();
     this.fogCells = new Set();
   }
 
@@ -15,16 +16,26 @@ export class Board {
     this.grid = createEmptyGrid();
     this.ships = [];
     this.shots = createEmptyGrid();
-    this.shields = new Set();
+    this.shieldedShips = new Set();
     this.revealed = new Set();
+    this.sonarMarks = new Map();
     this.fogCells = new Set();
   }
 
   key(r, c) { return `${r},${c}`; }
 
-  isShielded(r, c) { return this.shields.has(this.key(r, c)); }
+  getShipAt(r, c) { return findShipAt(this.ships, r, c); }
 
-  addShield(r, c) { this.shields.add(this.key(r, c)); }
+  isShipShielded(shipId) { return this.shieldedShips.has(shipId); }
+
+  isShielded(r, c) {
+    const ship = this.getShipAt(r, c);
+    return !!(ship && this.shieldedShips.has(ship.id));
+  }
+
+  addShieldToShip(shipId) { this.shieldedShips.add(shipId); }
+
+  getSonarMark(r, c) { return this.sonarMarks.get(this.key(r, c)); }
 
   revealCell(r, c) { this.revealed.add(this.key(r, c)); }
 
@@ -50,6 +61,28 @@ export class Board {
 
   isFogged(r, c) { return this.fogCells.has(this.key(r, c)); }
 
+  /** Синхронизирует потопление — если все клетки корабля поражены, он тонет */
+  reconcileSunkShips() {
+    for (const ship of this.ships) {
+      if (ship.sunk) continue;
+      const allCellsHit = ship.cells.every(([r, c]) => {
+        const s = this.shots[r][c];
+        return s === CELL.HIT || s === CELL.SUNK;
+      });
+      if (allCellsHit || ship.hits >= ship.cells.length) {
+        ship.sunk = true;
+        ship.hits = ship.cells.length;
+        markSunkArea(this.shots, ship);
+        for (const [sr, sc] of ship.cells) this.revealCell(sr, sc);
+      }
+    }
+  }
+
+  allShipsSunk() {
+    this.reconcileSunkShips();
+    return this.ships.length > 0 && this.ships.every(s => s.sunk);
+  }
+
   fire(r, c, options = {}) {
     if (this.shots[r][c] !== CELL.EMPTY && !options.allowRepeat) {
       return { valid: false, reason: 'already_shot' };
@@ -58,22 +91,11 @@ export class Board {
     const ship = findShipAt(this.ships, r, c);
     const result = { valid: true, r, c, hit: false, sunk: false, ship: null, shieldBlocked: false, cells: [[r, c]] };
 
-    if (ship && !ship.revealed && ship.typeId === 'submarine') {
-      const nearHit = ship.cells.some(([sr, sc]) =>
-        getAdjacentCells(sr, sc).some(([ar, ac]) => this.shots[ar][ac] === CELL.HIT || this.shots[ar][ac] === CELL.SUNK)
-      );
-      if (!nearHit && !options.revealAll) {
-        this.shots[r][c] = CELL.MISS;
-        result.hit = false;
-        return result;
-      }
-      ship.revealed = true;
-    }
-
-    if (ship && this.isShielded(r, c) && !options.ignoreShield) {
-      this.shields.delete(this.key(r, c));
+    if (ship && this.shieldedShips.has(ship.id) && !options.ignoreShield) {
+      this.shieldedShips.delete(ship.id);
       this.shots[r][c] = CELL.MISS;
       result.shieldBlocked = true;
+      result.hit = false;
       return result;
     }
 
@@ -89,6 +111,7 @@ export class Board {
       result.hit = true;
       result.ship = ship;
       ship.hits++;
+      ship.revealed = true;
       this.shots[r][c] = CELL.HIT;
       this.revealCell(r, c);
 
@@ -102,58 +125,77 @@ export class Board {
       this.shots[r][c] = CELL.MISS;
     }
 
+    this.reconcileSunkShips();
     return result;
   }
 
-  fireChain(r, c) {
-    const results = [];
-    const visited = new Set();
-    const queue = [[r, c]];
+  fireChainVolley(r, c) {
+    const first = this.fire(r, c);
+    if (!first.valid) return [first];
 
-    while (queue.length > 0) {
-      const [cr, cc] = queue.shift();
-      const k = this.key(cr, cc);
-      if (visited.has(k)) continue;
-      visited.add(k);
+    if (!first.hit || !first.ship) return [first];
 
-      const res = this.fire(cr, cc);
-      if (res.valid) {
-        results.push(res);
-        if (res.hit) {
-          for (const [ar, ac] of getAdjacentCells(cr, cc)) {
-            if (!visited.has(this.key(ar, ac)) && this.shots[ar][ac] === CELL.EMPTY) {
-              queue.push([ar, ac]);
-            }
-          }
-        }
-      }
+    const ship = first.ship;
+    const results = [first];
+
+    for (const [sr, sc] of ship.cells) {
+      if (sr === r && sc === c) continue;
+      const res = this.fire(sr, sc, { allowRepeat: true, ignoreShield: true, ignoreArmor: true });
+      if (res.valid) results.push(res);
     }
+
+    ship.sunk = true;
+    ship.hits = ship.cells.length;
+    markSunkArea(this.shots, ship);
+    for (const [sr, sc] of ship.cells) this.revealCell(sr, sc);
+    for (const res of results) {
+      if (res.ship === ship) res.sunk = true;
+    }
+    this.reconcileSunkShips();
     return results;
   }
 
-  fireAirstrike(r, c) {
-    const cells = getCrossCells(r, c);
-    const results = [];
-    for (const [cr, cc] of cells) {
-      if (this.shots[cr][cc] === CELL.EMPTY) {
-        results.push(this.fire(cr, cc));
+  sonarScanZone(r, c) {
+    if (this.shots[r][c] !== CELL.EMPTY) {
+      return { found: false, r, c, invalid: true, cells: [] };
+    }
+
+    const cells = [];
+    let found = false;
+
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        const nr = r + dr;
+        const nc = c + dc;
+        if (nr < 0 || nr >= GRID_SIZE || nc < 0 || nc >= GRID_SIZE) continue;
+        cells.push([nr, nc]);
+        if (findShipAt(this.ships, nr, nc)) found = true;
       }
     }
-    return results;
+
+    const base = found ? 'zone-ship' : 'zone-clear';
+    for (const [nr, nc] of cells) {
+      this.revealCell(nr, nc);
+      const isCenter = nr === r && nc === c;
+      this.sonarMarks.set(this.key(nr, nc), isCenter ? `${base}-center` : base);
+    }
+
+    return { found, r, c, cells, zoneMark: base, invalid: false };
+  }
+
+  sonarPing(r, c) {
+    return this.sonarScanZone(r, c);
   }
 
   sonarScan(r, c) {
-    const cells = getAreaCells(r, c, 1);
-    const found = [];
-    for (const [sr, sc] of cells) {
-      this.revealCell(sr, sc);
-      const ship = findShipAt(this.ships, sr, sc);
-      if (ship) found.push([sr, sc]);
-    }
-    return found;
+    const result = this.sonarScanZone(r, c);
+    if (result.invalid) return [];
+    if (!result.found) return [];
+    return result.cells.filter(([nr, nc]) => findShipAt(this.ships, nr, nc));
   }
 
   getRemainingShips() {
+    this.reconcileSunkShips();
     return this.ships.filter(s => !s.sunk);
   }
 }

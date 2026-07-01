@@ -8,7 +8,7 @@ export function buildMyBoard(you) {
 
   board.grid = createEmptyGrid();
   board.shots = you.enemyShots || createEmptyGrid();
-  board.shields = new Set(you.shields || []);
+  board.shieldedShips = new Set(you.shieldedShips || you.shields || []);
   board.revealed = new Set(you.revealed || []);
   board.fogCells = new Set();
 
@@ -35,6 +35,7 @@ export function buildEnemyBoard(you) {
   board.shots = you.myShots || createEmptyGrid();
   board.revealed = new Set(you.revealed || []);
   board.fogCells = new Set(you.fogCells || []);
+  board.sonarMarks = new Map(you.enemySonarMarks || []);
   board.ships = [];
   board.grid = createEmptyGrid();
   return board;
@@ -49,7 +50,7 @@ export function getMultiplayerGameState(mp, battleState) {
     turnNumber: battleState?.turnNumber || 0,
     energy: you?.energy ?? 10,
     combo: you?.combo ?? 0,
-    inventory: you?.inventory ?? { sonar: 1, chain: 0, airstrike: 0, shield: 0, smoke: 0 },
+    inventory: you?.inventory ?? { sonar: 1, chain: 2, shield: 2, smoke: 3 },
     stats: you?.stats ?? { hits: 0, misses: 0, shipsSunk: 0, combos: 0 },
     log: battleState?.log ?? [],
     playerBoard: buildMyBoard(you),

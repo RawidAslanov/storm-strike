@@ -19,11 +19,11 @@ export default defineConfig({
   plugins: [
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icons/*.png'],
+      includeAssets: ['icons/*.png', 'favicon-16.png', 'favicon-32.png', 'og-image.png'],
       manifest: {
-        name: 'Storm Strike — Морской Бой',
+        name: 'Storm Strike — Пиратский Морской Бой',
         short_name: 'Storm Strike',
-        description: 'Динамичный морской бой со штормами, способностями и комбо-атаками',
+        description: 'Пиратский морской бой с пушками, штормами и онлайн PvP',
         theme_color: '#0a1628',
         background_color: '#050d1a',
         display: 'standalone',
@@ -32,11 +32,13 @@ export default defineConfig({
         icons: [
           { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+          { src: 'icons/apple-touch-icon.png', sizes: '180x180', type: 'image/png', purpose: 'any' },
           { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,mp3,ogg,wav,oga}'],
+        maximumFileSizeToCacheInBytes: 15 * 1024 * 1024,
       },
     }),
   ],

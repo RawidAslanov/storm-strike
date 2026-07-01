@@ -1,0 +1,13 @@
+# Blueprint для Render.com — мультиплеер-сервер (WebSocket)
+# Dashboard → New → Blueprint → подключить репозиторий
+services:
+  - type: web
+    name: storm-strike-server
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"

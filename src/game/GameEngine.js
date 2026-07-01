@@ -1,6 +1,8 @@
-import { PHASE, DIFFICULTY, MAX_ENERGY, ENERGY_PER_TURN, COMBO_THRESHOLDS, POWER_UPS, STORM_EVENTS, CELL } from './constants.js';
+import {
+  GRID_SIZE, PHASE, CELL, DIFFICULTY, COMBO_THRESHOLDS, STARTING_INVENTORY, POWER_UPS,
+} from './constants.js';
 import { Board } from './Board.js';
-import { generateRandomFleet, createShip, canPlaceShip, placeShipOnGrid, allShipsSunk, resetShipIds, createEmptyGrid } from './Ship.js';
+import { generateRandomFleet, createShip, canPlaceShip, placeShipOnGrid, allShipsSunk, resetShipIds } from './Ship.js';
 import { AI } from './AI.js';
 import { StormSystem } from './StormSystem.js';
 
@@ -12,10 +14,9 @@ export class GameEngine {
     this.enemyBoard = new Board();
     this.ai = new AI();
     this.storm = new StormSystem();
-    this.energy = MAX_ENERGY;
     this.combo = 0;
     this.turn = 'player';
-    this.inventory = { sonar: 1, chain: 0, airstrike: 0, shield: 0, smoke: 0 };
+    this.inventory = { ...STARTING_INVENTORY };
     this.activePowerUp = null;
     this.shieldMode = false;
     this.placementShips = [];
@@ -45,10 +46,9 @@ export class GameEngine {
     resetShipIds();
     this.playerBoard.reset();
     this.enemyBoard.reset();
-    this.energy = MAX_ENERGY;
     this.combo = 0;
     this.turn = 'player';
-    this.inventory = { sonar: 1, chain: 0, airstrike: 0, shield: 0, smoke: 0 };
+    this.inventory = { ...STARTING_INVENTORY };
     this.activePowerUp = null;
     this.shieldMode = false;
     this.winner = null;
@@ -91,7 +91,10 @@ export class GameEngine {
     if (!ship) return [];
     const cells = [];
     for (let i = 0; i < ship.type.size; i++) {
-      cells.push(this.placementOrientation === 'h' ? [row, col + i] : [row + i, col]);
+      const r = this.placementOrientation === 'h' ? row : row + i;
+      const c = this.placementOrientation === 'h' ? col + i : col;
+      if (r < 0 || r >= GRID_SIZE || c < 0 || c >= GRID_SIZE) return [];
+      cells.push([r, c]);
     }
     return cells;
   }
@@ -129,49 +132,60 @@ export class GameEngine {
 
   selectPowerUp(id) {
     if (this.turn !== 'player' || this.phase !== PHASE.BATTLE) return;
+    if (this.inventory[id] <= 0 && id !== 'shield') return;
+
     if (id === 'shield') {
+      if (this.inventory.shield <= 0) return;
       this.shieldMode = !this.shieldMode;
       this.activePowerUp = this.shieldMode ? 'shield' : null;
+      if (!this.shieldMode) this.activePowerUp = null;
       this.emit('powerup');
       return;
     }
-    if (this.inventory[id] <= 0) return;
+
+    if (id === 'smoke') {
+      this.useSmoke();
+      return;
+    }
+
     this.activePowerUp = this.activePowerUp === id ? null : id;
     this.shieldMode = false;
     this.emit('powerup');
   }
 
-  canAfford(cost) { return this.energy >= cost; }
-
   playerFire(row, col) {
     if (this.turn !== 'player' || this.phase !== PHASE.BATTLE) return null;
-    if (this.enemyBoard.shots[row][col] !== CELL.EMPTY && this.activePowerUp !== 'sonar') return null;
+    if (this.enemyBoard.shots[row][col] !== CELL.EMPTY) return null;
 
     let results = [];
-    let energyCost = 1;
 
     if (this.activePowerUp === 'sonar' && this.inventory.sonar > 0) {
       this.inventory.sonar--;
-      const found = this.enemyBoard.sonarScan(row, col);
-      results = [{ valid: true, r: row, c: col, hit: found.length > 0, sonar: true, found }];
-      this.addLog(`📡 Сонар: обнаружено ${found.length} целей`);
+      const ping = this.enemyBoard.sonarScanZone(row, col);
+      if (ping.invalid) return null;
+      results = [{
+        valid: true,
+        r: row,
+        c: col,
+        hit: ping.found,
+        sonar: true,
+        zoneMark: ping.zoneMark,
+        cells: ping.cells,
+        found: ping.cells,
+      }];
+      this.addLog(
+        ping.found
+          ? '📡 Локатор: в зоне 3×3 обнаружен корабль!'
+          : '📡 Локатор: зона 3×3 пустая'
+      );
       this.activePowerUp = null;
-      this.endPlayerTurn(energyCost);
+      this.endPlayerTurn();
       return results;
     }
 
-    if (this.activePowerUp === 'airstrike' && this.inventory.airstrike > 0) {
-      if (!this.canAfford(POWER_UPS.airstrike.cost)) return null;
-      this.inventory.airstrike--;
-      energyCost += POWER_UPS.airstrike.cost;
-      results = this.enemyBoard.fireAirstrike(row, col);
-      this.addLog('💣 Авиаудар!');
-      this.activePowerUp = null;
-    } else if (this.activePowerUp === 'chain' && this.inventory.chain > 0) {
-      if (!this.canAfford(POWER_UPS.chain.cost)) return null;
+    if (this.activePowerUp === 'chain' && this.inventory.chain > 0) {
       this.inventory.chain--;
-      energyCost += POWER_UPS.chain.cost;
-      results = this.enemyBoard.fireChain(row, col);
+      results = this.enemyBoard.fireChainVolley(row, col);
       this.addLog('⚡ Цепная молния!');
       this.activePowerUp = null;
     } else {
@@ -183,14 +197,14 @@ export class GameEngine {
     this.processResults(results, 'player');
     this.lastResults = results;
 
-    if (allShipsSunk(this.enemyBoard.ships)) {
+    if (allShipsSunk(this.enemyBoard.ships) || this.enemyBoard.allShipsSunk()) {
       this.winner = 'player';
       this.phase = PHASE.GAME_OVER;
       this.emit('gameover', 'player');
       return results;
     }
 
-    this.endPlayerTurn(energyCost);
+    this.endPlayerTurn();
     return results;
   }
 
@@ -200,12 +214,15 @@ export class GameEngine {
       !s.sunk && s.cells.some(([r, c]) => r === row && c === col)
     );
     if (!ship) return false;
+    if (this.playerBoard.isShipShielded(ship.id)) return false;
+
     this.inventory.shield--;
-    this.playerBoard.addShield(row, col);
+    this.playerBoard.addShieldToShip(ship.id);
     this.shieldMode = false;
     this.activePowerUp = null;
-    this.addLog('🛡 Щит установлен!');
-    this.emit('shield', { row, col });
+    this.addLog(`🛡 Щит на ${ship.type.name} — выдержит 1 попадание`);
+    this.emit('shield', { shipId: ship.id });
+    this.emit('powerup');
     return true;
   }
 
@@ -239,7 +256,7 @@ export class GameEngine {
   checkComboReward() {
     for (const threshold of [...COMBO_THRESHOLDS].reverse()) {
       if (this.combo >= threshold.hits) {
-        this.inventory[threshold.reward]++;
+        this.inventory[threshold.reward] = (this.inventory[threshold.reward] || 0) + 1;
         this.stats.combos++;
         this.addLog(`${threshold.label} +${POWER_UPS[threshold.reward].name}`);
         this.emit('combo', threshold);
@@ -248,11 +265,9 @@ export class GameEngine {
     }
   }
 
-  endPlayerTurn(energyCost) {
-    this.energy = Math.max(0, this.energy - energyCost);
+  endPlayerTurn() {
     this.turn = 'ai';
     this.emit('turn', 'ai');
-
     setTimeout(() => this.aiTurn(), DIFFICULTY[this.difficulty].aiDelay);
   }
 
@@ -267,16 +282,18 @@ export class GameEngine {
     }
 
     const shot = this.ai.getShot();
-    let results = [this.playerBoard.fire(shot.r, shot.c)];
+    const results = [this.playerBoard.fire(shot.r, shot.c)];
     this.ai.registerShot(shot.r, shot.c, results[0]);
     this.processResults(results, 'ai');
     this.lastResults = results;
 
     if (results[0].hit) {
       this.addLog(`🔴 Враг попал в [${shot.r + 1},${shot.c + 1}]!`);
+    } else if (results[0].shieldBlocked) {
+      this.addLog(`🛡 Щит отразил удар в [${shot.r + 1},${shot.c + 1}] — стреляйте снова!`);
     }
 
-    if (allShipsSunk(this.playerBoard.ships)) {
+    if (allShipsSunk(this.playerBoard.ships) || this.playerBoard.allShipsSunk()) {
       this.winner = 'ai';
       this.phase = PHASE.GAME_OVER;
       this.emit('gameover', 'ai');
@@ -289,20 +306,11 @@ export class GameEngine {
   finishAiTurn() {
     this.turnNumber++;
     this.turn = 'player';
-    this.energy = Math.min(MAX_ENERGY, this.energy + ENERGY_PER_TURN + this.getEnergyBonus());
 
     const stormEvent = this.storm.tick(this.turnNumber);
-    if (stormEvent) {
-      this.applyStorm(stormEvent);
-    }
+    if (stormEvent) this.applyStorm(stormEvent);
 
     this.emit('turn', 'player');
-  }
-
-  getEnergyBonus() {
-    return this.playerBoard.ships
-      .filter(s => !s.sunk && s.type.ability === 'speed')
-      .length;
   }
 
   applyStorm(event) {
@@ -326,20 +334,19 @@ export class GameEngine {
         }
         break;
       }
-      case 'calm':
-        this.energy = Math.min(MAX_ENERGY, this.energy + 2);
-        break;
       default:
         break;
     }
   }
 
   useSmoke() {
-    if (this.inventory.smoke <= 0 || !this.canAfford(POWER_UPS.smoke.cost)) return false;
+    if (this.inventory.smoke <= 0) return false;
     this.inventory.smoke--;
-    this.energy -= POWER_UPS.smoke.cost;
     this.smokeActive = true;
+    this.activePowerUp = null;
+    this.shieldMode = false;
     this.addLog('💨 Дымовая завеса активирована!');
+    this.emit('powerup');
     return true;
   }
 

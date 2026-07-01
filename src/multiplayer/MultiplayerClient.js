@@ -1,8 +1,9 @@
 import { MSG } from '../../shared/protocol.js';
 
-const DEFAULT_WS = typeof location !== 'undefined'
-  ? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.hostname}:3001`
-  : 'ws://localhost:3001';
+const DEFAULT_WS = import.meta.env.VITE_WS_URL
+  || (import.meta.env.DEV && typeof location !== 'undefined'
+    ? `ws://${location.hostname}:3001`
+    : '');
 
 export class MultiplayerClient {
   constructor(url) {
@@ -21,6 +22,10 @@ export class MultiplayerClient {
 
   connect() {
     return new Promise((resolve, reject) => {
+      if (!this.url) {
+        reject(new Error('Сервер мультиплеера не настроен (VITE_WS_URL)'));
+        return;
+      }
       try {
         this.ws = new WebSocket(this.url);
       } catch (err) {

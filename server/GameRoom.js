@@ -213,7 +213,8 @@ export class GameRoom {
           sunk: s.sunk,
           hits: s.hits,
         })),
-        shields: [...p.board.shields],
+        enemySonarMarks: opponent ? [...opponent.board.sonarMarks.entries()] : [],
+        shieldedShips: [...p.board.shieldedShips],
         revealed: [...p.board.revealed],
         fogCells: [...p.board.fogCells],
       };
@@ -270,9 +271,12 @@ export class GameRoom {
       !s.sunk && s.cells.some(([r, c]) => r === row && c === col)
     );
     if (!ship) return { ok: false, error: 'Нет корабля в этой клетке' };
+    if (player.board.isShipShielded(ship.id)) {
+      return { ok: false, error: 'Корабль уже под щитом' };
+    }
 
     player.inventory.shield--;
-    player.board.addShield(row, col);
+    player.board.addShieldToShip(ship.id);
     player.shieldMode = false;
     player.activePowerUp = null;
     this.addLog(`🛡 ${player.name} установил щит`);
@@ -294,7 +298,7 @@ export class GameRoom {
       return { ok: true, results: [{ valid: true, smokeBlocked: true }], gameOver: false };
     }
 
-    if (opponent.board.shots[row][col] !== CELL.EMPTY && player.activePowerUp !== 'sonar') {
+    if (opponent.board.shots[row][col] !== CELL.EMPTY) {
       return { ok: false, error: 'Уже стреляли сюда' };
     }
 
@@ -303,9 +307,23 @@ export class GameRoom {
 
     if (player.activePowerUp === 'sonar' && player.inventory.sonar > 0) {
       player.inventory.sonar--;
-      const found = opponent.board.sonarScan(row, col);
-      results = [{ valid: true, r: row, c: col, hit: found.length > 0, sonar: true, found }];
-      this.addLog(`📡 ${player.name}: сонар обнаружил ${found.length} целей`);
+      const ping = opponent.board.sonarScanZone(row, col);
+      if (ping.invalid) return { ok: false, error: 'Клетка уже проверена' };
+      results = [{
+        valid: true,
+        r: row,
+        c: col,
+        hit: ping.found,
+        sonar: true,
+        zoneMark: ping.zoneMark,
+        cells: ping.cells,
+        found: ping.cells,
+      }];
+      this.addLog(
+        ping.found
+          ? `📡 ${player.name}: в зоне 3×3 есть корабль!`
+          : `📡 ${player.name}: зона 3×3 пустая`
+      );
       player.activePowerUp = null;
       this.endTurn(player, energyCost);
       return {
@@ -343,7 +361,7 @@ export class GameRoom {
 
     this.processResults(player, results);
 
-    const gameOver = allShipsSunk(opponent.board.ships);
+    const gameOver = allShipsSunk(opponent.board.ships) || opponent.board.allShipsSunk();
     let winnerId = null;
     let storm = null;
 

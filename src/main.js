@@ -1,13 +1,21 @@
 import './styles/index.css';
 import { App } from './ui/App.js';
 
-const app = document.getElementById('app');
-new App(app);
+const root = document.getElementById('app');
 
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    // Registered by vite-plugin-pwa
-  });
+try {
+  new App(root);
+} catch (err) {
+  console.error(err);
+  if (root) {
+    root.innerHTML = `
+      <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#0a1628;color:#f0e0c0;font-family:sans-serif;text-align:center">
+        <div>
+          <h1 style="margin:0 0 12px">⚓ Storm Strike</h1>
+          <p>Не удалось загрузить игру. Обновите страницу: <b>Ctrl+Shift+R</b></p>
+        </div>
+      </div>`;
+  }
 }
 
 document.addEventListener('touchstart', () => {}, { passive: true });

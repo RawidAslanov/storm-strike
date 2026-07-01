@@ -16,13 +16,17 @@ export function createShip(typeId, cells) {
     hits: 0,
     sunk: false,
     armorUsed: false,
-    revealed: typeId !== 'submarine',
+    revealed: true,
   };
 }
 
+export function cellsInBounds(cells) {
+  return cells.every(([r, c]) => r >= 0 && r < GRID_SIZE && c >= 0 && c < GRID_SIZE);
+}
+
 export function canPlaceShip(grid, cells) {
+  if (!cells.length || !cellsInBounds(cells)) return false;
   for (const [r, c] of cells) {
-    if (r < 0 || r >= GRID_SIZE || c < 0 || c >= GRID_SIZE) return false;
     if (grid[r][c] !== CELL.EMPTY) return false;
     for (let dr = -1; dr <= 1; dr++) {
       for (let dc = -1; dc <= 1; dc++) {
@@ -60,8 +64,10 @@ export function generateRandomFleet() {
     while (!placed && attempts < 500) {
       attempts++;
       const horizontal = Math.random() > 0.5;
-      const r = Math.floor(Math.random() * GRID_SIZE);
-      const c = Math.floor(Math.random() * GRID_SIZE);
+      const maxR = horizontal ? GRID_SIZE : GRID_SIZE - size + 1;
+      const maxC = horizontal ? GRID_SIZE - size + 1 : GRID_SIZE;
+      const r = Math.floor(Math.random() * maxR);
+      const c = Math.floor(Math.random() * maxC);
       const cells = [];
       for (let i = 0; i < size; i++) {
         cells.push(horizontal ? [r, c + i] : [r + i, c]);

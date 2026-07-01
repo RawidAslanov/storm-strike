@@ -24,7 +24,7 @@ export class StormSystem {
     this.stormInterval = 3 + Math.floor(Math.random() * 3);
 
     const events = Object.values(STORM_EVENTS);
-    const weights = [0.35, 0.25, 0.15, 0.25];
+    const weights = [0.4, 0.3, 0.3];
     let roll = Math.random();
     let event = events[0];
     for (let i = 0; i < events.length; i++) {

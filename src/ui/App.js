@@ -1,13 +1,16 @@
 import { GameEngine } from '../game/GameEngine.js';
-import { PHASE, GAME_MODE } from '../game/constants.js';
+import { PHASE, GAME_MODE, TOTAL_SHIPS } from '../game/constants.js';
 import { MultiplayerClient } from '../multiplayer/MultiplayerClient.js';
 import { getMultiplayerGameState } from '../multiplayer/boardBuilder.js';
 import {
-  renderGrid, renderPlacementGrid, renderPowerUps, renderShipList,
-  renderLog, renderStats, animateCell, showStormOverlay,
-  renderDifficultyButtons,
+  renderGrid, updateGrid, initGridLayers, renderPlacementGrid, renderPowerUps, updatePowerUps,
+  renderShipList, renderLog, updateLog, showStormOverlay,
+  renderDifficultyButtons, renderFleetPanel, renderFleetGuide,
 } from './renderer.js';
+import { refreshShipLayers } from './shipLayer.js';
+import { animateCannonVolley } from './cannonFx.js';
 import { sounds, resumeAudio } from './sounds.js';
+import { music, createMusicControls, bindMusicGesture } from './music.js';
 
 export class App {
   constructor(root) {
@@ -22,9 +25,54 @@ export class App {
     this.shieldMode = false;
     this.activePowerUp = null;
     this.mpLocalGame = null;
+    this.currentPhase = null;
+    this.battleRefs = null;
+    this.placementGrid = null;
+    this.musicBar = null;
+
+    this.initPersistentLayers();
 
     this.game.on((event, data) => this.handleEvent(event, data));
     this.render();
+  }
+
+  initPersistentLayers() {
+    this.root.innerHTML = '';
+    const ocean = document.createElement('div');
+    ocean.className = 'ocean-bg';
+    ocean.innerHTML = `
+      <div class="ocean-bg__vignette"></div>
+      <div class="ocean-bg__stars"></div>
+      <div class="ocean-bg__caustics"></div>
+      <div class="ocean-bg__grade"></div>
+      <div class="waves"></div>
+      <div class="waves waves--2"></div>
+      <div class="waves waves--3"></div>
+    `;
+    this.root.appendChild(ocean);
+
+    const fxLayer = document.createElement('div');
+    fxLayer.id = 'fx-layer';
+    fxLayer.className = 'fx-layer';
+    this.root.appendChild(fxLayer);
+
+    const stormOverlay = document.createElement('div');
+    stormOverlay.id = 'storm-overlay';
+    stormOverlay.className = 'storm-overlay';
+    this.root.appendChild(stormOverlay);
+
+    this.container = document.createElement('div');
+    this.container.className = 'app-container';
+    this.root.appendChild(this.container);
+
+    this.musicBar = createMusicControls();
+    this.root.appendChild(this.musicBar);
+    bindMusicGesture(() => resumeAudio());
+  }
+
+  startMusicOnce() {
+    resumeAudio();
+    music.ensurePlaying();
   }
 
   handleEvent(event, data) {
@@ -38,10 +86,59 @@ export class App {
         showStormOverlay(data);
         break;
       case 'lightning':
-        animateCell(data.r, data.c, 'enemy', 'cell--lightning');
         break;
       case 'gameover':
-        sounds[data === 'player' ? 'win' : 'lose']();
+        if (data === 'player') return;
+        if (data === 'ai' && this.battleRefs && this.game.lastResults?.length) {
+          this._runAiShotAnimation().then(() => {
+            sounds.lose();
+            this.currentPhase = null;
+            this.battleRefs = null;
+            this.render();
+          });
+          return;
+        }
+        sounds.lose();
+        this.currentPhase = null;
+        this.battleRefs = null;
+        break;
+      case 'placement':
+        if (this.currentPhase === PHASE.PLACEMENT && this.placementGrid?._refresh) {
+          this.placementGrid._refresh();
+          const list = this.container.querySelector('#ship-list');
+          if (list) {
+            const newList = renderShipList(this.game);
+            list.replaceWith(newList);
+            newList.id = 'ship-list';
+          }
+          const sub = this.container.querySelector('.header__sub');
+          const ship = this.game.getCurrentPlacementShip();
+          if (sub) sub.textContent = ship ? `Разместите: ${ship.type.name} (${ship.type.size} кл.)` : 'Готово!';
+          return;
+        }
+        break;
+      case 'powerup':
+      case 'shield':
+        if (this.currentPhase === PHASE.BATTLE && this.battleRefs) {
+          this.updateBattleUI(this.getBattleState());
+        }
+        return;
+      case 'turn':
+        if (data === 'player' && this.battleRefs && !this.mp && this.game.lastResults?.length) {
+          this._runAiShotAnimation();
+          return;
+        }
+        if (data === 'ai') return;
+        if (this.currentPhase === PHASE.BATTLE && this.battleRefs) {
+          this.updateBattleUI(this.getBattleState());
+          return;
+        }
+        break;
+      case 'log':
+        if (this.currentPhase === PHASE.BATTLE && this.battleRefs) {
+          this.updateBattleUI(this.getBattleState());
+          return;
+        }
         break;
     }
     this.render();
@@ -58,6 +155,7 @@ export class App {
       case 'room_created':
       case 'room_joined':
         this.game.phase = PHASE.LOBBY;
+        this.currentPhase = null;
         break;
       case 'player_joined':
       case 'placement_update':
@@ -72,6 +170,7 @@ export class App {
         break;
       case 'game_start':
         this.game.phase = data.phase === 'battle' ? PHASE.BATTLE : PHASE.PLACEMENT;
+        this.currentPhase = null;
         if (data.phase === 'battle') {
           this.mpState = getMultiplayerGameState(this.mp, this.mp.state?.battle);
         }
@@ -83,9 +182,17 @@ export class App {
           else if (!res.smokeBlocked) sounds.miss();
         }
         this.mpState = getMultiplayerGameState(this.mp, data);
+        if (this.currentPhase === PHASE.BATTLE && this.battleRefs) {
+          this.updateBattleUI(this.getBattleState());
+          return;
+        }
         break;
       case 'state_sync':
         this.mpState = getMultiplayerGameState(this.mp, data);
+        if (this.currentPhase === PHASE.BATTLE && this.battleRefs) {
+          this.updateBattleUI(this.getBattleState());
+          return;
+        }
         break;
       case 'storm':
         sounds.storm();
@@ -94,19 +201,63 @@ export class App {
       case 'game_over':
         sounds[data.winnerId === this.mp.playerId ? 'win' : 'lose']();
         this.game.phase = PHASE.GAME_OVER;
+        this.currentPhase = null;
+        this.battleRefs = null;
         this.mpState = getMultiplayerGameState(this.mp, data);
         break;
       case 'turn':
         if (this.mpState) this.mpState.isYourTurn = data.currentTurn === this.mp.playerId;
+        if (this.currentPhase === PHASE.BATTLE && this.battleRefs) {
+          this.updateBattleUI(this.getBattleState());
+          return;
+        }
         break;
       case 'error':
         this.showToast(data.message || 'Ошибка');
-        break;
+        return;
       case 'disconnected':
         this.showToast('Соединение потеряно');
-        break;
+        return;
     }
     this.render();
+  }
+
+  getBattleState() {
+    if (this.mp) {
+      const s = this.mpState || getMultiplayerGameState(this.mp, {});
+      return {
+        isPlayerTurn: s.isYourTurn,
+        energy: 0,
+        turnNumber: s.turnNumber,
+        stats: s.stats,
+        combo: s.combo,
+        playerBoard: s.playerBoard,
+        enemyBoard: s.enemyBoard,
+        inventory: s.inventory,
+        log: s.log,
+        isMp: true,
+        game: {
+          turn: s.isYourTurn ? 'player' : 'ai',
+          phase: 'battle',
+          shieldMode: this.shieldMode,
+          activePowerUp: this.activePowerUp,
+          inventory: s.inventory,
+        },
+      };
+    }
+    const g = this.game;
+    return {
+      isPlayerTurn: g.turn === 'player',
+      turnNumber: g.turnNumber,
+      stats: g.stats,
+      combo: g.combo,
+      playerBoard: g.playerBoard,
+      enemyBoard: g.enemyBoard,
+      inventory: g.inventory,
+      log: g.log,
+      isMp: false,
+      game: g,
+    };
   }
 
   showComboPopup(text) {
@@ -126,70 +277,51 @@ export class App {
   }
 
   render() {
-    this.root.innerHTML = '';
-    this.appendBackground();
+    const phase = this.mp ? this.game.phase : this.game.phase;
 
-    const container = document.createElement('div');
-    container.className = 'app-container';
-    this.root.appendChild(container);
+    if (phase === PHASE.BATTLE && this.currentPhase === PHASE.BATTLE && this.battleRefs) {
+      this.updateBattleUI(this.getBattleState());
+      return;
+    }
 
-    const phase = this.mp ? (this.game.phase) : this.game.phase;
+    this.currentPhase = phase;
+    this.battleRefs = null;
+    this.placementGrid = null;
+    this.container.innerHTML = '';
 
     switch (phase) {
-      case PHASE.MENU: this.renderMenu(container); break;
-      case PHASE.LOBBY: this.renderLobby(container); break;
+      case PHASE.MENU: this.renderMenu(this.container); break;
+      case PHASE.LOBBY: this.renderLobby(this.container); break;
       case PHASE.PLACEMENT:
-        this.mp ? this.renderMpPlacement(container) : this.renderPlacement(container);
+        this.mp ? this.renderMpPlacement(this.container) : this.renderPlacement(this.container);
         break;
       case PHASE.BATTLE:
-        this.mp ? this.renderMpBattle(container) : this.renderBattle(container);
+        this.mp ? this.renderMpBattle(this.container) : this.renderBattle(this.container);
         break;
-      case PHASE.GAME_OVER: this.renderGameOver(container); break;
+      case PHASE.GAME_OVER: this.renderGameOver(this.container); break;
     }
-  }
-
-  appendBackground() {
-    const ocean = document.createElement('div');
-    ocean.className = 'ocean-bg';
-    ocean.innerHTML = '<div class="waves"></div><div class="waves waves--2"></div>';
-    this.root.appendChild(ocean);
-
-    const fxLayer = document.createElement('div');
-    fxLayer.id = 'fx-layer';
-    fxLayer.className = 'fx-layer';
-    this.root.appendChild(fxLayer);
-
-    const stormOverlay = document.createElement('div');
-    stormOverlay.id = 'storm-overlay';
-    stormOverlay.className = 'storm-overlay';
-    this.root.appendChild(stormOverlay);
   }
 
   renderMenu(container) {
     container.innerHTML = `
       <div class="screen screen--menu">
-        <div class="logo">
-          <div class="logo__icon">⚓</div>
+        <div class="logo logo--hero">
+          <div class="logo__frame">
+            <div class="logo__icon">⚓</div>
+          </div>
           <h1 class="logo__title">STORM STRIKE</h1>
-          <p class="logo__subtitle">Морской Бой Нового Поколения</p>
+          <p class="logo__subtitle">Пиратский Морской Бой · ${TOTAL_SHIPS} кораблей</p>
+          <span class="logo__badge">⚔ Пушки · Штормы · PvP</span>
         </div>
-        <div class="menu-features">
-          <div class="feature"><span>⚡</span> Комбо-атаки</div>
-          <div class="feature"><span>🌩</span> Штормовые события</div>
-          <div class="feature"><span>👥</span> Онлайн PvP</div>
-          <div class="feature"><span>🔱</span> 5 типов кораблей</div>
-        </div>
-
-        <div class="menu-modes">
+        <div id="fleet-guide"></div>
+        <div class="menu-modes menu-modes--cards">
           <button class="btn btn--primary btn--large" id="btn-solo">🤖 Против AI</button>
           <button class="btn btn--secondary btn--large" id="btn-online">👥 Онлайн PvP</button>
         </div>
-
         <div id="solo-panel" class="menu-panel" hidden>
           <p class="menu-hint">Выберите сложность</p>
           <div id="diff-btns"></div>
         </div>
-
         <div id="online-panel" class="menu-panel" hidden>
           <input class="input" id="player-name" placeholder="Ваше имя" maxlength="20" value="${this.playerName}" />
           <button class="btn btn--primary" id="btn-create">Создать комнату</button>
@@ -197,19 +329,23 @@ export class App {
             <input class="input" id="room-code" placeholder="Код комнаты" maxlength="6" />
             <button class="btn btn--secondary" id="btn-join">Войти</button>
           </div>
-          <p class="menu-hint menu-hint--small">Для мультиплеера запустите сервер: <code>npm run server</code></p>
+          <p class="menu-hint menu-hint--small">Для мультиплеера: <code>npm run server</code></p>
         </div>
       </div>
     `;
 
+    container.querySelector('#fleet-guide').appendChild(renderFleetGuide());
+
     container.querySelector('#btn-solo').addEventListener('click', () => {
       sounds.click();
+      this.startMusicOnce();
       container.querySelector('#solo-panel').hidden = false;
       container.querySelector('#online-panel').hidden = true;
       const diffContainer = container.querySelector('#diff-btns');
       diffContainer.innerHTML = '';
       diffContainer.appendChild(renderDifficultyButtons((diff) => {
         resumeAudio();
+        this.startMusicOnce();
         sounds.click();
         this.mp = null;
         this.mode = GAME_MODE.SINGLE;
@@ -219,6 +355,7 @@ export class App {
 
     container.querySelector('#btn-online').addEventListener('click', () => {
       sounds.click();
+      this.startMusicOnce();
       container.querySelector('#online-panel').hidden = false;
       container.querySelector('#solo-panel').hidden = true;
     });
@@ -235,7 +372,7 @@ export class App {
         await this.mp.connect();
         this.mp.createRoom(name);
       } catch {
-        this.showToast('Не удалось подключиться к серверу. Запустите: npm run server');
+        this.showToast('Не удалось подключиться. Запустите: npm run server');
       }
     });
 
@@ -288,9 +425,9 @@ export class App {
     const ship = this.game.getCurrentPlacementShip();
     container.innerHTML = `
       <div class="screen screen--placement">
-        <header class="header">
-          <h2>Расстановка флота</h2>
-          <p class="header__sub">${ship ? `Разместите: ${ship.type.icon} ${ship.type.name}` : 'Готово!'}</p>
+        <header class="header header--glass">
+          <h2>⚓ Расстановка флота</h2>
+          <p class="header__sub">${ship ? `Разместите: ${ship.type.name} (${ship.type.size} кл.)` : 'Готово!'}</p>
         </header>
         <div id="placement-grid" class="grid-wrap"></div>
         <div id="ship-list"></div>
@@ -301,13 +438,16 @@ export class App {
       </div>
     `;
 
-    container.querySelector('#placement-grid').appendChild(
-      renderPlacementGrid(this.game, (r, c) => {
-        resumeAudio(); sounds.click();
-        this.game.placeShipAt(r, c);
-      })
-    );
-    container.querySelector('#ship-list').appendChild(renderShipList(this.game));
+    this.placementGrid = renderPlacementGrid(this.game, (r, c) => {
+      resumeAudio(); sounds.click();
+      this.game.placeShipAt(r, c);
+    });
+    container.querySelector('#placement-grid').appendChild(this.placementGrid);
+    this.placementGrid._attachLayers?.();
+    const list = renderShipList(this.game);
+    list.id = 'ship-list';
+    container.querySelector('#ship-list').replaceWith(list);
+
     container.querySelector('#btn-rotate').addEventListener('click', () => {
       sounds.click(); this.game.rotatePlacement();
     });
@@ -326,9 +466,9 @@ export class App {
 
     container.innerHTML = `
       <div class="screen screen--placement">
-        <header class="header">
-          <h2>Расстановка флота</h2>
-          <p class="header__sub">${ship ? `Разместите: ${ship.type.icon} ${ship.type.name}` : 'Ожидание соперника...'}</p>
+        <header class="header header--glass">
+          <h2>⚓ Расстановка флота</h2>
+          <p class="header__sub">${ship ? `Разместите: ${ship.type.name} (${ship.type.size} кл.)` : 'Ожидание соперника...'}</p>
         </header>
         <div id="placement-grid" class="grid-wrap"></div>
         <div id="ship-list"></div>
@@ -339,14 +479,17 @@ export class App {
       </div>
     `;
 
-    container.querySelector('#placement-grid').appendChild(
-      renderPlacementGrid(localGame, (r, c) => {
-        resumeAudio(); sounds.click();
-        this.mp.placeShip(r, c);
-        localGame.placeShipAt(r, c, { skipBattle: true });
-      })
-    );
-    container.querySelector('#ship-list')?.appendChild(renderShipList(localGame));
+    this.placementGrid = renderPlacementGrid(localGame, (r, c) => {
+      resumeAudio(); sounds.click();
+      this.mp.placeShip(r, c);
+      localGame.placeShipAt(r, c, { skipBattle: true });
+    });
+    container.querySelector('#placement-grid').appendChild(this.placementGrid);
+    this.placementGrid._attachLayers?.();
+    const list = renderShipList(localGame);
+    list.id = 'ship-list';
+    container.querySelector('#ship-list').replaceWith(list);
+
     container.querySelector('#btn-rotate').addEventListener('click', () => {
       sounds.click();
       localGame.rotatePlacement();
@@ -359,44 +502,164 @@ export class App {
     });
   }
 
+  buildBattleScreen(container, state, handlers) {
+    const { isPlayerTurn, turnNumber, stats, combo, playerBoard, enemyBoard, log, isMp, game } = state;
+    const enemyRemaining = enemyBoard.getRemainingShips().length;
+
+    container.innerHTML = `
+      <div class="screen screen--battle">
+        <header class="hud hud--glass">
+          <div class="hud__turn ${isPlayerTurn ? 'hud__turn--player' : 'hud__turn--enemy'}">
+            ${isPlayerTurn ? '🎯 Ваш ход — стреляйте!' : '⏳ Ход соперника...'}
+          </div>
+          <div class="hud__row">
+            <div class="hud__turn-num">Ход ${turnNumber}${isMp ? ' · PvP' : ''}</div>
+          </div>
+          <div class="hud__enemy-info">🎯 У соперника: <strong>${enemyRemaining}</strong> из ${TOTAL_SHIPS} кораблей</div>
+        </header>
+        <div class="boards">
+          <div class="board-panel">
+            <h3 class="board-panel__title">Поле противника</h3>
+            <div id="enemy-grid" class="grid-wrap"></div>
+            <div id="enemy-fleet"></div>
+          </div>
+          <div class="board-panel board-panel--player">
+            <h3 class="board-panel__title">Ваш флот</h3>
+            <div id="player-grid" class="grid-wrap"></div>
+            <div id="player-fleet"></div>
+          </div>
+        </div>
+        <div id="powerups"></div>
+        <div id="battle-log"></div>
+        <div class="stats">
+          <div class="stat"><span class="stat__val" data-stat="hits">${stats.hits}</span><span class="stat__lbl">Попадания</span></div>
+          <div class="stat"><span class="stat__val" data-stat="sunk">${stats.shipsSunk}</span><span class="stat__lbl">Потоплено</span></div>
+          <div class="stat"><span class="stat__val" data-stat="combo">×${combo}</span><span class="stat__lbl">Комбо</span></div>
+        </div>
+      </div>
+    `;
+
+    const enemyGrid = renderGrid(enemyBoard, 'enemy', game, handlers.onEnemy);
+    const playerGrid = renderGrid(playerBoard, 'player', game, handlers.onPlayer);
+    const enemyWrap = container.querySelector('#enemy-grid');
+    const playerWrap = container.querySelector('#player-grid');
+    enemyWrap.appendChild(enemyGrid);
+    playerWrap.appendChild(playerGrid);
+    playerWrap.classList.toggle('grid-wrap--shield-mode', !!game.shieldMode);
+    initGridLayers(enemyWrap, enemyBoard, 'enemy');
+    initGridLayers(playerWrap, playerBoard, 'player');
+
+    const enemyFleet = renderFleetPanel(enemyBoard, 'Флот соперника');
+    const playerFleet = renderFleetPanel(playerBoard, 'Ваш флот');
+    container.querySelector('#enemy-fleet').appendChild(enemyFleet);
+    container.querySelector('#player-fleet').appendChild(playerFleet);
+
+    const puGame = { inventory: state.inventory || game.inventory, activePowerUp: game.activePowerUp, shieldMode: game.shieldMode };
+    const powerups = renderPowerUps(puGame, handlers.onPowerUp);
+    container.querySelector('#powerups').appendChild(powerups);
+    container.querySelector('#battle-log').appendChild(renderLog(log));
+
+    this.battleRefs = {
+      container,
+      enemyGrid,
+      playerGrid,
+      enemyFleet,
+      playerFleet,
+      powerups,
+      log: container.querySelector('#battle-log'),
+      handlers,
+    };
+  }
+
+  updateBattleUI(state) {
+    const refs = this.battleRefs;
+    if (!refs) return;
+
+    const { isPlayerTurn, turnNumber, stats, combo, playerBoard, enemyBoard, log, game } = state;
+    const enemyRemaining = enemyBoard.getRemainingShips().length;
+
+    const turnEl = refs.container.querySelector('.hud__turn');
+    turnEl.className = `hud__turn ${isPlayerTurn ? 'hud__turn--player' : 'hud__turn--enemy'}`;
+    turnEl.textContent = isPlayerTurn
+      ? (game.shieldMode ? '🛡 Нажмите на корабль — щит на весь корабль' : game.activePowerUp === 'sonar' ? '📡 Локатор: выберите центр области 3×3' : '🎯 Ваш ход — стреляйте!')
+      : '⏳ Ход соперника...';
+
+    refs.container.querySelector('.hud__turn-num').textContent = `Ход ${turnNumber}${state.isMp ? ' · PvP' : ''}`;
+    refs.container.querySelector('.hud__enemy-info strong').textContent = enemyRemaining;
+
+    refs.container.querySelector('[data-stat="hits"]').textContent = stats.hits;
+    refs.container.querySelector('[data-stat="sunk"]').textContent = stats.shipsSunk;
+    refs.container.querySelector('[data-stat="combo"]').textContent = `×${combo}`;
+
+    refs.playerGrid.parentElement?.classList.toggle('grid-wrap--shield-mode', !!game.shieldMode);
+
+    updateGrid(refs.enemyGrid, enemyBoard, 'enemy', game);
+    updateGrid(refs.playerGrid, playerBoard, 'player', game);
+    refreshShipLayers(refs.enemyGrid.parentElement, enemyBoard, 'enemy');
+    refreshShipLayers(refs.playerGrid.parentElement, playerBoard, 'player');
+    refs.enemyFleet._update(enemyBoard);
+    refs.playerFleet._update(playerBoard);
+    updatePowerUps(refs.powerups, { inventory: state.inventory || game.inventory, activePowerUp: game.activePowerUp, shieldMode: game.shieldMode });
+    updateLog(refs.log, log);
+  }
+
+  async _runAiShotAnimation() {
+    const refs = this.battleRefs;
+    if (!refs) return;
+    const playerWrap = refs.container.querySelector('#player-grid');
+    await animateCannonVolley(playerWrap, this.game.lastResults, 'player');
+    this.updateBattleUI(this.getBattleState());
+  }
+
   renderBattle(container) {
     const g = this.game;
-    const isPlayerTurn = g.turn === 'player';
-    container.innerHTML = this.battleHTML(isPlayerTurn, g.energy, g.turnNumber, g.stats, g.combo);
-    this.wireBattle(container, g, {
-      onEnemy: (r, c) => {
+    this.buildBattleScreen(container, this.getBattleState(), {
+      onEnemy: async (r, c) => {
         resumeAudio();
+        this.startMusicOnce();
+        const g = this.game;
         if (g.shieldMode) return;
         const results = g.playerFire(r, c);
         if (!results) return;
-        this.animateResults(results);
+        const enemyWrap = this.battleRefs?.container?.querySelector('#enemy-grid');
+        if (results[0]?.sonar) {
+          sounds.sonar();
+          this.updateBattleUI(this.getBattleState());
+          return;
+        }
+        await animateCannonVolley(enemyWrap, results, 'enemy');
+        if (g.phase === PHASE.GAME_OVER) {
+          sounds.win();
+          this.currentPhase = null;
+          this.battleRefs = null;
+          this.render();
+        } else if (g.phase === PHASE.BATTLE) {
+          this.updateBattleUI(this.getBattleState());
+        }
       },
       onPlayer: (r, c) => {
-        if (g.shieldMode) { resumeAudio(); sounds.powerup(); g.playerShield(r, c); }
+        if (!g.shieldMode) return;
+        resumeAudio();
+        if (g.playerShield(r, c)) {
+          sounds.powerup();
+          this.updateBattleUI(this.getBattleState());
+        }
       },
       onPowerUp: (id) => {
-        resumeAudio(); sounds.powerup();
-        if (id === 'smoke') g.useSmoke();
-        else g.selectPowerUp(id);
+        resumeAudio();
+        sounds.powerup();
+        g.selectPowerUp(id);
       },
-      playerBoard: g.playerBoard,
-      enemyBoard: g.enemyBoard,
-      game: g,
-      log: g.log,
     });
   }
 
   renderMpBattle(container) {
-    const s = this.mpState || getMultiplayerGameState(this.mp, {});
-    const isPlayerTurn = s.isYourTurn;
-    container.innerHTML = this.battleHTML(isPlayerTurn, s.energy, s.turnNumber, s.stats, s.combo, true);
-
-    const fakeGame = { turn: isPlayerTurn ? 'player' : 'ai', phase: 'battle', shieldMode: this.shieldMode, activePowerUp: this.activePowerUp };
-
-    this.wireBattle(container, fakeGame, {
+    const state = this.getBattleState();
+    this.buildBattleScreen(container, state, {
       onEnemy: (r, c) => {
-        if (!isPlayerTurn || this.shieldMode) return;
+        if (!state.isPlayerTurn || this.shieldMode) return;
         resumeAudio();
+        this.startMusicOnce();
         this.mp.fire(r, c);
       },
       onPlayer: (r, c) => {
@@ -411,68 +674,7 @@ export class App {
         else if (id === 'shield') this.shieldMode = !this.shieldMode;
         else this.mp.selectPowerUp(id);
       },
-      playerBoard: s.playerBoard,
-      enemyBoard: s.enemyBoard,
-      game: { ...fakeGame, inventory: s.inventory, shieldMode: this.shieldMode },
-      log: s.log,
-      inventory: s.inventory,
     });
-  }
-
-  battleHTML(isPlayerTurn, energy, turnNumber, stats, combo, isMp = false) {
-    return `
-      <div class="screen screen--battle">
-        <header class="hud">
-          <div class="hud__turn ${isPlayerTurn ? 'hud__turn--player' : 'hud__turn--enemy'}">
-            ${isPlayerTurn ? '🎯 Ваш ход' : '⏳ Ход соперника'}
-          </div>
-          <div class="hud__energy">
-            <div class="energy-bar">
-              <div class="energy-bar__fill" style="width:${(energy / 10) * 100}%"></div>
-            </div>
-            <span class="energy-bar__label">⚡ ${energy}/10</span>
-          </div>
-          <div class="hud__turn-num">Ход ${turnNumber}${isMp ? ' • PvP' : ''}</div>
-        </header>
-        <div class="boards">
-          <div class="board-panel">
-            <h3 class="board-panel__title">🎯 Противник</h3>
-            <div id="enemy-grid" class="grid-wrap"></div>
-          </div>
-          <div class="board-panel board-panel--player">
-            <h3 class="board-panel__title">🛡 Ваш флот</h3>
-            <div id="player-grid" class="grid-wrap"></div>
-          </div>
-        </div>
-        <div id="powerups"></div>
-        <div id="battle-log"></div>
-        <div class="stats">
-          <div class="stat"><span class="stat__val">${stats.hits}</span><span class="stat__lbl">Попадания</span></div>
-          <div class="stat"><span class="stat__val">${stats.shipsSunk}</span><span class="stat__lbl">Потоплено</span></div>
-          <div class="stat"><span class="stat__val">×${combo}</span><span class="stat__lbl">Комбо</span></div>
-        </div>
-      </div>
-    `;
-  }
-
-  wireBattle(container, game, { onEnemy, onPlayer, onPowerUp, playerBoard, enemyBoard, log, inventory }) {
-    container.querySelector('#enemy-grid').appendChild(
-      renderGrid(enemyBoard, 'enemy', game, onEnemy)
-    );
-    container.querySelector('#player-grid').appendChild(
-      renderGrid(playerBoard, 'player', game, onPlayer)
-    );
-    const puGame = { inventory: inventory || game.inventory, activePowerUp: game.activePowerUp, shieldMode: game.shieldMode };
-    container.querySelector('#powerups').appendChild(renderPowerUps(puGame, onPowerUp));
-    container.querySelector('#battle-log').appendChild(renderLog(log));
-  }
-
-  animateResults(results) {
-    for (const res of results) {
-      if (res.sonar) animateCell(res.r, res.c, 'enemy', 'cell--sonar');
-      else if (res.hit) animateCell(res.r, res.c, 'enemy', res.sunk ? 'cell--sunk-anim' : 'cell--hit-anim');
-      else animateCell(res.r, res.c, 'enemy', 'cell--miss-anim');
-    }
   }
 
   renderGameOver(container) {
@@ -493,6 +695,8 @@ export class App {
       sounds.click();
       if (this.mp) { this.mp.disconnect(); this.mp = null; this.mpState = null; }
       this.game.phase = PHASE.MENU;
+      this.currentPhase = null;
+      this.battleRefs = null;
       this.render();
     });
   }

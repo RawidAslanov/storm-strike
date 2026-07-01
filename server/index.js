@@ -1,9 +1,21 @@
+import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
-import { randomBytes } from 'crypto';
 import { RoomManager } from './RoomManager.js';
 
 const PORT = process.env.PORT || 3001;
-const wss = new WebSocketServer({ port: PORT });
+const HOST = process.env.HOST || '0.0.0.0';
+
+const httpServer = createServer((req, res) => {
+  if (req.url === '/' || req.url === '/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, service: 'storm-strike-ws' }));
+    return;
+  }
+  res.writeHead(404);
+  res.end();
+});
+
+const wss = new WebSocketServer({ server: httpServer });
 const rooms = new RoomManager();
 
 function send(ws, type, payload = {}) {
@@ -196,4 +208,6 @@ wss.on('connection', (ws) => {
   }
 });
 
-console.log(`🚢 Storm Strike multiplayer server on ws://localhost:${PORT}`);
+httpServer.listen(PORT, HOST, () => {
+  console.log(`🚢 Storm Strike multiplayer server on ${HOST}:${PORT}`);
+});

@@ -652,7 +652,7 @@ export class App {
         <div class="lobby__code-wrap">
           <h2 class="lobby__title">Комната</h2>
           <div class="lobby__code" id="lobby-code">${this.mp?.roomCode || '----'}</div>
-          <p class="lobby__hint">${isHost ? 'Отправьте код другу' : 'Ожидание начала...'}</p>
+          <p class="lobby__hint">${isHost ? 'Нажмите код — скопировать ссылку' : 'Ожидание начала...'}</p>
         </div>
         <div class="lobby__players" id="lobby-players">
           ${players.map(p => `<div class="lobby__player">${p.name} ${p.id === this.mp?.playerId ? '(вы)' : ''}</div>`).join('')}
